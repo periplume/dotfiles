@@ -1,0 +1,7 @@
+[user]
+	name = Jason Lindemuth
+	email = jason@bloom.us
+[credential]
+	helper = osxkeychain
+[credential "https://github.com"]
+	useHttpPath = true
