@@ -32,7 +32,8 @@ purple=$(tput setaf 5)
 cyan=$(tput setaf 6)
 white=$(tput setaf 7)
 reset=$(tput sgr0)
-export PS1="\[$blue\]\u \[$purple\]\w \[$yellow\]$ \[$reset\]"
+#export PS1="\[$blue\]\u \[$purple\]\w \[$yellow\]$ \[$reset\]"
+export PS1="\[$blue\]\u \[$green\]\h \[$purple\]\w \[$yellow\]$ \[$reset\]"
 
 # set colors for ls
 export LSCOLORS=ahfcxdxbBxbxdabagacedx
@@ -61,4 +62,4 @@ export LESS=-R
 
 # disable ctrl-s 
 stty -ixon
-alias dotfiles='/usr/bin/git --git-dir=/Users/jason.lindemuth/.dotfiles/ --work-tree=/Users/jason.lindemuth'
+alias dotfiles='/usr/bin/git --git-dir=/Users/jason/.dotfiles/ --work-tree=/Users/jason'
