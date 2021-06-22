@@ -61,3 +61,4 @@ export LESS=-R
 
 # disable ctrl-s 
 stty -ixon
+alias dotfiles='/usr/bin/git --git-dir=/Users/jason.lindemuth/.dotfiles/ --work-tree=/Users/jason.lindemuth'
