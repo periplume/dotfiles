@@ -62,4 +62,15 @@ export LESS=-R
 
 # disable ctrl-s 
 stty -ixon
-alias dotfiles='/usr/bin/git --git-dir=/Users/jason/.dotfiles/ --work-tree=/Users/jason'
+
+# dotfiles management with git
+#alias dotfiles='/usr/bin/git --git-dir=/Users/jason/.dotfiles/ --work-tree=/Users/jason'
+dotfiles () {
+	if [[ $1 = "help" ]] || [[ -z "$1" ]]
+	then
+		echo "dotfiles: manage dotfiles with git"
+		echo "usage: dotfiles status|add|commit|push"
+	else
+		/usr/bin/git --git-dir=$HOME/.dotfiles --work-tree=$HOME "$@"
+	fi
+}
