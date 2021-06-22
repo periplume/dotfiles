@@ -69,7 +69,7 @@ dotfiles () {
 	if [[ $1 = "help" ]] || [[ -z "$1" ]]
 	then
 		echo "dotfiles: manage dotfiles with git"
-		echo "usage: dotfiles status|add|commit|push"
+		echo "usage: dotfiles status|add|commit|push|pull"
 	else
 		/usr/bin/git --git-dir=$HOME/.dotfiles --work-tree=$HOME "$@"
 	fi
