@@ -64,7 +64,6 @@ export LESS=-R
 stty -ixon
 
 # dotfiles management with git
-#alias dotfiles='/usr/bin/git --git-dir=/Users/jason/.dotfiles/ --work-tree=/Users/jason'
 dotfiles () {
 	if [[ $1 = "help" ]] || [[ -z "$1" ]]
 	then
