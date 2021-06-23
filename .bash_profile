@@ -74,3 +74,6 @@ dotfiles () {
 		/usr/bin/git --git-dir=$HOME/.dotfiles --work-tree=$HOME "$@"
 	fi
 }
+
+# pass completion
+source /usr/local/etc/bash_completion.d/pass
