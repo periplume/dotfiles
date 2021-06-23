@@ -246,4 +246,6 @@ let &t_EI = "\e[2 q"
 " kep mappings
 map = dd
 
+" autocorrect common typos
+iab teh the
 
