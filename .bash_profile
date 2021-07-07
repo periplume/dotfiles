@@ -32,7 +32,6 @@ purple=$(tput setaf 5)
 cyan=$(tput setaf 6)
 white=$(tput setaf 7)
 reset=$(tput sgr0)
-#export PS1="\[$blue\]\u \[$purple\]\w \[$yellow\]$ \[$reset\]"
 export PS1="\[$blue\]\u \[$green\]\h \[$purple\]\w \[$yellow\]$ \[$reset\]"
 
 # set colors for ls
