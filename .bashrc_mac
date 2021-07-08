@@ -1,0 +1,13 @@
+# .bashrc specific settings for mac
+# github.com/periplume/dotfiles.git
+
+# silence default shell message
+export BASH_SILENCE_DEPRECATION_WARNING=1
+
+# set up colors
+export CLICOLOR=1
+
+# set colors for ls
+export LSCOLORS=ahfcxdxbBxbxdabagacedx
+
+
