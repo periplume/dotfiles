@@ -1,11 +1,11 @@
 # .bashrc
-# jkl
+# github.com/periplume/dotfiles.git
+
+# if not running interactive shell, exit
+[[ $- != *i* ]] && return
 
 # be quiet
 set bell-style visible
-
-# silence default shell message
-export BASH_SILENCE_DEPRECATION_WARNING=1
 
 # bash history settings
 # append to the history file, don't overwrite it
@@ -22,7 +22,6 @@ HISTTIMEFORMAT="%F %T %s "
 shopt -s checkwinsize
 
 # set up colors
-export CLICOLOR=1
 black=$(tput setaf 0)
 red=$(tput setaf 1)
 green=$(tput setaf 2)
@@ -32,10 +31,9 @@ purple=$(tput setaf 5)
 cyan=$(tput setaf 6)
 white=$(tput setaf 7)
 reset=$(tput sgr0)
-export PS1="\[$blue\]\u \[$green\]\h \[$purple\]\w \[$yellow\]$ \[$reset\]"
 
-# set colors for ls
-export LSCOLORS=ahfcxdxbBxbxdabagacedx
+# set the prompt
+export PS1="\[$blue\]\u \[$green\]\h \[$purple\]\w \[$yellow\]$ \[$reset\]"
 
 # COLORIZE LESS for man
 man () {
@@ -78,3 +76,7 @@ dotfiles () {
 
 # pass completion
 source /usr/local/etc/bash_completion.d/pass
+
+# source platform-specific files
+[ "$(uname)" = "Darwin" ] && source .bashrc_mac
+
