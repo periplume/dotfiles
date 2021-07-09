@@ -15,9 +15,20 @@ set -o nounset
 set -o pipefail
 
 # check for dependencies here by platform
-# if linux, blah
-# if darwin, blah homebrew
-# need git, awk
+if [ $(uname) = Darwin ]
+then
+	sudo xcode-select --install
+	/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+	brew install --cask iterm2
+	brew install git
+	brew install pass
+	brew install vim
+	brew install fzf
+	brew tap xwmx/taps
+	brew install nb
+fi
+
+
 
 # check that ~/.dotfiles does not exist
 if [ -d "$HOME/.dotfiles" ]
