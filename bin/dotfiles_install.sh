@@ -47,4 +47,4 @@ done
 # copy latest .bashrc into $HOME/
 git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME checkout
 git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME push -u origin master
-
+dotfiles
