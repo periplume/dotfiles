@@ -14,6 +14,11 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
+# check for dependencies here by platform
+# if linux, blah
+# if darwin, blah homebrew
+# need git, awk
+
 # check that ~/.dotfiles does not exist
 if [ -d "$HOME/.dotfiles" ]
 then
@@ -29,6 +34,7 @@ git clone --bare https://github.com/periplume/dotfiles.git $HOME/.dotfiles
 git --git-dir=$HOME/.dotfiles --work-tree=$HOME config --local status.showUntrackedFiles no
 
 # list the files in the dotfiles repo (may conflict with existing)
+# we can do this without awk i'm sure!
 repofiles=$(git --no-pager --git-dir=$HOME/.dotfiles/ --work-tree=$HOME ls-tree -r master | awk '{print $4}')
 for i in $repofiles
 do
