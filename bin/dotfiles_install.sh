@@ -59,3 +59,20 @@ done
 # copy latest .bashrc into $HOME/
 git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME checkout
 git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME push -u origin master
+
+
+# mac dotfiles config
+#[core]
+#	repositoryformatversion = 0
+#	filemode = true
+#	bare = true
+#	ignorecase = true
+#	precomposeunicode = true
+#[status]
+#	showUntrackedFiles = no
+#[remote "origin"]
+#	url = https://github.com/periplume/dotfiles.git
+#	fetch = +refs/heads/*:refs/remotes/origin/*
+#[branch "master"]
+#	remote = origin
+#	merge = refs/heads/master
