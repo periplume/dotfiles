@@ -39,13 +39,14 @@ then
 fi
 
 # clone the dotfiles repo
-git clone --bare https://github.com/periplume/dotfiles.git $HOME/.dotfiles
+git clone --mirror https://github.com/periplume/dotfiles.git $HOME/.dotfiles
+#git clone --bare https://github.com/periplume/dotfiles.git $HOME/.dotfiles
 
 # instruct git to ignore untracked files in this repo
 git --git-dir=$HOME/.dotfiles --work-tree=$HOME config --local status.showUntrackedFiles no
 
 # trying to get setting up the remote right
-git --git-dir=$HOME/.dotfiles --work-tree=$HOME fetch origin master:refs/remotes/origin/master
+#git --git-dir=$HOME/.dotfiles --work-tree=$HOME fetch origin master:refs/remotes/origin/master
 
 
 # list the files in the dotfiles repo (may conflict with existing)
