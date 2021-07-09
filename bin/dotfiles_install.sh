@@ -41,6 +41,7 @@ do
 	if [ -f $i ]
 	then
 		mv $i $i.dotfile_backup
+		echo "NOTICE moving $i to $i.dotfile_backup"
 	fi
 done
 
