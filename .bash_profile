@@ -5,4 +5,3 @@
 
 # if there is a .bashrc file in the home dir, source it
 [ -r ~/.bashrc ] && . ~/.bashrc
-

@@ -102,3 +102,4 @@ function dotfiles_local() {
 # source platform-specific files
 [ "$(uname)" = "Darwin" ] && source .bashrc_mac
 
+[ "$(uname)" = Linux } && export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
