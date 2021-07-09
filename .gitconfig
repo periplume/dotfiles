@@ -1,7 +1,9 @@
 [user]
 	name = Jason Lindemuth
 	email = jason@bloom.us
-[credential]
-	helper = osxkeychain
 [credential "https://github.com"]
 	useHttpPath = true
+
+[credential]
+    helper = "!f() { if [ \"$(uname)\" = Linux ]; then git credential-cache --timeout 3600 \"$@\"; else git credential-osxkeychain \"$@\"; fi; };f"
+
