@@ -74,6 +74,23 @@ dotfiles () {
 	fi
 }
 
+function dotfiles_status() {
+  local a="master" b="origin/master"
+  local base=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME merge-base $a $b )
+  local aref=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME rev-parse  $a )
+  local bref=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME rev-parse  $b )
+
+  if [[ $aref == "$bref" ]]; then
+    echo up-to-date $aref $bref
+  elif [[ $aref == "$base" ]]; then
+    echo behind $aref $bref
+  elif [[ $bref == "$base" ]]; then
+    echo ahead $aref $bref
+  else
+    echo diverged $aref $bref
+  fi
+}
+
 # source platform-specific files
 [ "$(uname)" = "Darwin" ] && source .bashrc_mac
 
