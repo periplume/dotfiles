@@ -60,6 +60,8 @@ done
 git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME remote remove origin
 git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME remote add origin https://github.com/periplume/dotfiles
 git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME remote update
+git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME push --set-upstream origin master
+# git push --set-upstream origin master
 
 # copy latest .bashrc into $HOME/
 git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME checkout
