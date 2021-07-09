@@ -91,6 +91,10 @@ function dotfiles_status() {
   fi
 }
 
+function dotfiles_local() {
+	git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet || echo "${red}dirty${reset}"
+}
+
 # source platform-specific files
 [ "$(uname)" = "Darwin" ] && source .bashrc_mac
 
