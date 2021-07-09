@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 #
-# github.com/periplume/dotfiles.git
+# github.com/periplume/dotfiles
 #
+# checks for existence of $HOME/.dotfiles; exits if exists
+# clones the dotfiles repo in the bare style
+# sets git to ignore everything but in this repo
+# copies existing file into backup copy as a lame precaution
+# checks out all dotfiles into $HOME and sets upstream branch
+# at that point dotfiles is in working order
 
 # bash best practice settings
 set -o errexit
@@ -36,20 +42,3 @@ done
 git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME checkout
 git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME push -u origin master
 
-
-exit
-# copy latest .bashrc into $HOME/
-git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME checkout HEAD .bashrc
-
-
-#diff .bashrc <(git --no-pager --git-dir=$HOME/.dotfiles/ --work-tree=$HOME show master:.bashrc) &> /dev/null
-diff -q .bashrc <(git --no-pager --git-dir=$HOME/.dotfiles/ --work-tree=$HOME show master:.bashrc)
-if [ $? = 0 ]
-then
-	echo "BASHRC: same"
-else
-	echo "BASHRC: different"
-fi
-echo "TEST"
-# copy latest .bashrc into $HOME/
-git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME checkout HEAD .bashrc
