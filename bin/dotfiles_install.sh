@@ -56,36 +56,11 @@ do
 	fi
 done
 
-
+# strange sequence required for this to work...
 git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME remote remove origin
 git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME remote add origin https://github.com/periplume/dotfiles
+git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME remote update
 
 # copy latest .bashrc into $HOME/
 git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME checkout
 
-# add the line
-#fetch = +refs/heads/*:refs/remotes/origin/*
-# remote update
-
-
-# working on the work mac
-# git 2.32.0
-# problems with this script on linux
-# upgrading git here now, was 2.17.1
-
-
-# mac dotfiles config
-#[core]
-#	repositoryformatversion = 0
-#	filemode = true
-#	bare = true
-#	ignorecase = true
-#	precomposeunicode = true
-#[status]
-#	showUntrackedFiles = no
-#[remote "origin"]
-#	url = https://github.com/periplume/dotfiles.git
-#	fetch = +refs/heads/*:refs/remotes/origin/*
-#[branch "master"]
-#	remote = origin
-#	merge = refs/heads/master
