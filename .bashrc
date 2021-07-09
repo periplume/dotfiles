@@ -90,8 +90,9 @@ function dotfiles_status() {
     echo ${red}diverged${reset} $aref $bref
   fi
 
-	git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet || echo "local is ${red}dirty${reset}"
+	# check if local working tree is dirty or clean
 	git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet && echo "local is ${green}clean${reset}"
+	git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet || echo "local is ${red}dirty${reset}" && git --git-dir=$HOME/.dotfiles --work-tree=$HOME status -s
 }
 
 function dotfiles_local() {
