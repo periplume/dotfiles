@@ -74,9 +74,6 @@ dotfiles () {
 	fi
 }
 
-# pass completion
-source /usr/local/etc/bash_completion.d/pass
-
 # source platform-specific files
 [ "$(uname)" = "Darwin" ] && source .bashrc_mac
 
