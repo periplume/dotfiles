@@ -81,14 +81,17 @@ function dotfiles_status() {
   local bref=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME rev-parse  $b )
 
   if [[ $aref == "$bref" ]]; then
-    echo up-to-date $aref $bref
+    echo ${green}up-to-date${reset} $aref $bref
   elif [[ $aref == "$base" ]]; then
-    echo behind $aref $bref
+    echo ${yellow}behind${reset} $aref $bref
   elif [[ $bref == "$base" ]]; then
-    echo ahead $aref $bref
+    echo ${yellow}ahead${reset} $aref $bref
   else
-    echo diverged $aref $bref
+    echo ${red}diverged${reset} $aref $bref
   fi
+
+	git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet || echo "local is ${red}dirty${reset}"
+	git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet && echo "local is ${green}clean${reset}"
 }
 
 function dotfiles_local() {
