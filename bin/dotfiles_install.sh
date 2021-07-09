@@ -45,8 +45,6 @@ git clone --bare https://github.com/periplume/dotfiles.git $HOME/.dotfiles
 git --git-dir=$HOME/.dotfiles --work-tree=$HOME config --local status.showUntrackedFiles no
 
 # 
-git --git-dir=$HOME/.dotfiles --work-tree=$HOME remote add origin
-git --git-dir=$HOME/.dotfiles --work-tree=$HOME fetch
 
 # trying to get setting up the remote right
 #git --git-dir=$HOME/.dotfiles --work-tree=$HOME fetch origin master:refs/remotes/origin/master
