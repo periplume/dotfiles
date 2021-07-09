@@ -10,4 +10,7 @@ export CLICOLOR=1
 # set colors for ls
 export LSCOLORS=ahfcxdxbBxbxdabagacedx
 
+# pass completion
+source /usr/local/etc/bash_completion.d/pass
+
 
