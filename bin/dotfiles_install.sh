@@ -17,18 +17,28 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
+_command_exists() {
+  hash "${1}" 2>/dev/null
+}
+
 # check for dependencies here by platform
 if [ $(uname) = Darwin ]
 then
-	sudo xcode-select --install
-	/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-	brew install --cask iterm2
-	brew install git
-	brew install pass
-	brew install vim
-	brew install fzf
-	brew tap xwmx/taps
-	brew install nb
+	if ! _command_exists "git"
+	then
+  	echo "ERROR: missing git...install xcode and other tools:"
+		echo "# sudo xcode-select --install"
+		echo "# /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+		echo "# brew install --cask iterm2"
+		echo "# brew install git"
+		echo "# brew install pass"
+		echo "# brew install vim"
+		echo "# brew install fzf"
+		echo "# brew tap xwmx/taps"
+		echo "# brew install nb"
+		echo "  install the above, then try again"
+  	exit 1
+	fi
 fi
 
 # check that ~/.dotfiles does not exist
