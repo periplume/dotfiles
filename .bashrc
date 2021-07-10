@@ -81,6 +81,8 @@ function dotfiles_status() {
   local bref=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME rev-parse  $b )
   local isDirty=$(git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet)
 
+	echo $isDirty
+
 	if $isDirty; then
 		echo "local working files are ${red}dirty${reset}"
 	fi
