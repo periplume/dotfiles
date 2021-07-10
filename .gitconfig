@@ -3,9 +3,6 @@
 	email = jason@bloom.us
 [credential "https://github.com"]
 	useHttpPath = true
-
 [credential]
-    #helper = "!f() { if [ \"$(uname)\" = Linux ]; then git credential-cache; else git credential-osxkeychain; fi; };f"
-    #helper = "!f() { if [ \"$(uname)\" = Linux ]; then git credential-cache --timeout 3600 \"$@\"; else git credential-osxkeychain \"$@\"; fi; };f"
     helper = "!f() { if [ \"$(uname)\" = Linux ]; then git credential-cache \"$@\"; else git credential-osxkeychain \"$@\"; fi; };f"
 
