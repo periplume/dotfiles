@@ -79,6 +79,11 @@ function dotfiles_status() {
   local base=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME merge-base $a $b )
   local aref=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME rev-parse  $a )
   local bref=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME rev-parse  $b )
+  local isDirty=$(git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet)
+
+	if $isDirty; then
+		echo "local working files are ${red}dirty${reset}"
+	fi
 
   if [[ $aref == "$bref" ]]; then
     echo ${green}up-to-date${reset} $aref $bref
