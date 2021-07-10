@@ -8,6 +8,9 @@
 # copies existing file into backup copy as a lame precaution
 # checks out all dotfiles into $HOME and sets upstream branch
 # at that point dotfiles is in working order
+#
+# https://raw.githubusercontent.com/periplume/dotfiles/master/bin/dotfiles_install.sh
+# /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/periplume/dotfiles/master/bin/dotfiles_install.sh)"
 
 # bash best practice settings
 set -o errexit
@@ -28,8 +31,6 @@ then
 	brew install nb
 fi
 
-
-
 # check that ~/.dotfiles does not exist
 if [ -d "$HOME/.dotfiles" ]
 then
@@ -45,8 +46,9 @@ git clone --bare https://github.com/periplume/dotfiles.git $HOME/.dotfiles
 git --git-dir=$HOME/.dotfiles --work-tree=$HOME config --local status.showUntrackedFiles no
 
 # list the files in the dotfiles repo (may conflict with existing)
-# we can do this without awk i'm sure!
 repofiles=$(git --no-pager --git-dir=$HOME/.dotfiles/ --work-tree=$HOME ls-tree -r master | awk '{print $4}')
+# we can do this without awk i'm sure!
+# make backups of the dotfiles about to be replaced
 for i in $repofiles
 do
 	if [ -f $i ]
@@ -56,13 +58,13 @@ do
 	fi
 done
 
-# strange sequence required for this to work...
+# strange sequence required to set up the remote tracking...
 git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME remote remove origin
 git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME remote add origin https://github.com/periplume/dotfiles
 git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME remote update
 git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME push --set-upstream origin master
-# git push --set-upstream origin master
 
-# copy latest .bashrc into $HOME/
+# copy all dotfiles into $HOME/
 git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME checkout
+# TODO use sparse checkout to refine/control what lands in $HOME
 

@@ -95,11 +95,19 @@ function dotfiles_status() {
 	git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet || echo "local is ${red}dirty${reset}" && git --git-dir=$HOME/.dotfiles --work-tree=$HOME status -s
 }
 
-function dotfiles_local() {
-	git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet || echo "${red}dirty${reset}"
+# unfinished
+# build PS1 to include =+- in color to represent dotfiles status
+# local = dirty (red) or clean (green)
+# remote = ahead (yellow) or behind (yellow) or same (green) or neither (red)
+# set these as ENV in function called by PS1
+function dotfile_prompt() {
+	local _dotfile_local=0
 }
 
 # source platform-specific files
 [ "$(uname)" = "Darwin" ] && source .bashrc_mac
+[ "$(uname)" = "Linux" ] && source .bashrc_linux
 
-[ "$(uname)" = Linux ] && export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
+# used this to get latest git in ubuntu 18 testing git remote sync setup
+# likely can remove
+#[ "$(uname)" = Linux ] && export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
