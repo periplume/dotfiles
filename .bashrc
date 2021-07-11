@@ -115,11 +115,12 @@ function dotfiles_status() {
 	
 	# test sync of local with remote
   if [[ $aref == "$bref" ]]; then
-    echo ${green}up-to-date${reset} $aref $bref
+    echo "local is ${green}up-to-date${reset} $aref $bref"
+		# TODO let bash snip this string to show first 5 of hash
   elif [[ $aref == "$base" ]]; then
-    echo ${yellow}behind${reset} $aref $bref
+    echo "local is ${yellow}behind${reset} $aref $bref"
   elif [[ $bref == "$base" ]]; then
-    echo ${yellow}ahead${reset} $aref $bref
+    echo "local is ${yellow}ahead${reset} $aref $bref"
   	git --git-dir=$HOME/.dotfiles --work-tree=$HOME rev-list --left-right --count master...origin/master
   else
     echo ${red}diverged${reset} $aref $bref
