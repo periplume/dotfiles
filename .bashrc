@@ -1,6 +1,8 @@
 # .bashrc
 # github.com/periplume/dotfiles.git
 
+DOTFILES_REMOTE=https://github.com/periplime/dotfiles
+
 # if not running interactive shell, exit
 [[ $- != *i* ]] && return
 
@@ -80,11 +82,30 @@ function dotfiles_status() {
   local aref=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME rev-parse  $a )
   local bref=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME rev-parse  $b )
 
+	# test if remote is reachable
+	curl ${DOTFILES_REMOTE} -sIo /dev/null
+	if test "$?" -eq 0
+	then
+		echo "remote ${DOTFILES_REMOTE} is ${green}reachable${reset}."
+	else
+		echo "remote ${DOTFILES_REMOTE} is ${red}not reachable${reset}."
+	fi
+
 	# test if local working tree is clean or not
   git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet && \
 		echo "local working files are ${green}clean${reset}." || \
 		echo "local working files are ${red}dirty${reset}."
 
+	# test if there are staged files not committed
+  git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet --cached --exit-code
+	if test "$?" -eq 0
+	then
+		echo "local dotfiles is ${green}consistent${reset}."
+	else
+		echo "local dotfiles has ${red}uncommited changes${reset}."
+	fi
+	
+	# test sync of local with remote
   if [[ $aref == "$bref" ]]; then
     echo ${green}up-to-date${reset} $aref $bref
   elif [[ $aref == "$base" ]]; then
