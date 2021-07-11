@@ -93,7 +93,7 @@ function dotfiles_status() {
 		echo "remote ${DOTFILES_REMOTE} is ${green}reachable${reset}."
 	else
 		echo "remote ${DOTFILES_REMOTE} is ${red}not reachable${reset}."
-		exit 1
+		echo "WARNING: no remote reachable and thus no backup."
 	fi
 
 	# test if local working tree is clean or not
