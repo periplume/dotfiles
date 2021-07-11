@@ -35,6 +35,7 @@ blue=$(tput setaf 4)
 purple=$(tput setaf 5)
 cyan=$(tput setaf 6)
 white=$(tput setaf 7)
+reverse=$(tput rev)
 reset=$(tput sgr0)
 
 # set the prompt
@@ -127,15 +128,22 @@ function dotfiles_status() {
   else
     echo ${red}diverged${reset} $aref $bref
   fi
-
+}
 # unfinished JKL
 # build PS1 to include =+- in color to represent dotfiles status
 # local = dirty (red) or clean (green)
 # remote = ahead (yellow) or behind (yellow) or same (green) or neither (red)
 # set these as ENV in function called by PS1
-#function dotfile_prompt() {
-#	local _dotfile_local=0
+function dotfile_prompt() {
+  if git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet
+	then
+		echo "${green}c${reset}"
+	else
+		echo "${red}${reverse}d${reset}"
+	fi
 }
+
+export PS1="\[$blue\]\u \[$green\]\h \[$purple\]\w `dotfile_prompt` \[$yellow\]$ \[$reset\]"
 
 # source platform-specific files
 [ "$(uname)" = "Darwin" ] && source .bashrc_mac
