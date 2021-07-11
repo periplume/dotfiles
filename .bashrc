@@ -1,7 +1,10 @@
 # .bashrc
 # github.com/periplume/dotfiles.git
 
+# TODO make this into an array
 DOTFILES_REMOTE=https://github.com/periplime/dotfiles
+# we can report the number of remotes easily
+# and iterate through them
 
 # if not running interactive shell, exit
 [[ $- != *i* ]] && return
@@ -92,17 +95,22 @@ function dotfiles_status() {
 	fi
 
 	# test if local working tree is clean or not
-  git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet && \
-		echo "local working files are ${green}clean${reset}." || \
+  git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet
+	if test "$?" -eq 0
+	then
+		echo "local working files are ${green}clean${reset}."
+	else
 		echo "local working files are ${red}dirty${reset}."
-
+		git --git-dir=$HOME/.dotfiles --work-tree=$HOME status -s
+	fi
+	
 	# test if there are staged files not committed
   git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet --cached --exit-code
 	if test "$?" -eq 0
 	then
-		echo "local dotfiles is ${green}consistent${reset}."
+		echo "local dotfiles repo is ${green}consistent${reset}."
 	else
-		echo "local dotfiles has ${red}uncommited changes${reset}."
+		echo "local dotfiles has ${yellow}uncommited changes${reset}."
 	fi
 	
 	# test sync of local with remote
@@ -112,28 +120,20 @@ function dotfiles_status() {
     echo ${yellow}behind${reset} $aref $bref
   elif [[ $bref == "$base" ]]; then
     echo ${yellow}ahead${reset} $aref $bref
+  	git --git-dir=$HOME/.dotfiles --work-tree=$HOME rev-list --left-right --count master...origin/master
   else
     echo ${red}diverged${reset} $aref $bref
   fi
-
-	# check if local working tree is dirty or clean
-	git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet && echo "local is ${green}clean${reset}"
-	git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet || echo "local is ${red}dirty${reset}" && git --git-dir=$HOME/.dotfiles --work-tree=$HOME status -s
-}
 
 # unfinished
 # build PS1 to include =+- in color to represent dotfiles status
 # local = dirty (red) or clean (green)
 # remote = ahead (yellow) or behind (yellow) or same (green) or neither (red)
 # set these as ENV in function called by PS1
-function dotfile_prompt() {
-	local _dotfile_local=0
+#function dotfile_prompt() {
+#	local _dotfile_local=0
 }
 
 # source platform-specific files
 [ "$(uname)" = "Darwin" ] && source .bashrc_mac
 [ "$(uname)" = "Linux" ] && source .bashrc_linux
-
-# used this to get latest git in ubuntu 18 testing git remote sync setup
-# likely can remove
-#[ "$(uname)" = Linux ] && export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
