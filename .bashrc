@@ -80,6 +80,7 @@ dotfiles () {
 }
 
 function dotfiles_status() {
+	# fix this shit and call a local and b remote
   local a="master" b="origin/master"
   local base=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME merge-base $a $b )
   local aref=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME rev-parse  $a )
@@ -92,6 +93,7 @@ function dotfiles_status() {
 		echo "remote ${DOTFILES_REMOTE} is ${green}reachable${reset}."
 	else
 		echo "remote ${DOTFILES_REMOTE} is ${red}not reachable${reset}."
+		exit 1
 	fi
 
 	# test if local working tree is clean or not
