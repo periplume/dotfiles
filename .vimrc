@@ -44,6 +44,8 @@ autocmd BufNewFile,BufRead *.md set filetype=markdown
 " general editing mode
 set linebreak 
 set textwidth=80 
+set formatoptions=cq
+set wrap
 
 func! NoteMode()
 	" like write mode but without the forced auto wrapping
