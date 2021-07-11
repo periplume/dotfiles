@@ -126,7 +126,7 @@ function dotfiles_status() {
     echo ${red}diverged${reset} $aref $bref
   fi
 
-# unfinished
+# unfinished JKL
 # build PS1 to include =+- in color to represent dotfiles status
 # local = dirty (red) or clean (green)
 # remote = ahead (yellow) or behind (yellow) or same (green) or neither (red)
