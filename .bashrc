@@ -130,8 +130,7 @@ function dotfiles_status() {
 # set dynamic prompt displaying various data
 # https://stackoverflow.com/questions/16715103/bash-prompt-with-the-last-exit-code
 # it seems that using tput to do the colors breaks readline/history
-# where as using ascii color codes works fine and doesn't mess with
-# readline/history
+# where as using ascii color codes works fine
 PROMPT_COMMAND=__prompt_command
 __prompt_command() {
     local _lastExit="$?"
