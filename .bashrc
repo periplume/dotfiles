@@ -26,7 +26,7 @@ HISTTIMEFORMAT="%F %T %s "
 # update the values of LINES and COLUMNS.
 shopt -s checkwinsize
 
-# set up colors
+# set up color variable shortcuts
 black=$(tput setaf 0)
 red=$(tput setaf 1)
 green=$(tput setaf 2)
@@ -37,9 +37,6 @@ cyan=$(tput setaf 6)
 white=$(tput setaf 7)
 reverse=$(tput rev)
 reset=$(tput sgr0)
-
-# set the prompt
-#export PS1="\[$blue\]\u \[$green\]\h \[$purple\]\w \[$yellow\]$ \[$reset\]"
 
 # COLORIZE LESS for man
 man () {
@@ -131,27 +128,46 @@ function dotfiles_status() {
 }
 
 # set dynamic prompt displaying various data
-function dotfile_prompt() {
-	_lastExit="$?"
-	_promptString=""
-	# test if local working tree is clean or not
-  if git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet
-	then
-		_promptString+="${green}c${reset} "
-	else
-		_promptString+="${red}d${reset} "
-	fi
-	# change prompt indicator to red/green based on last command exit status
-	if [ $_lastExit != 0 ]
-	then
-		_promptString+="${red}$ "
-	else
-		_promptString+="${green}$ "
-	fi
-	echo ${_promptString}
-}
+# https://stackoverflow.com/questions/16715103/bash-prompt-with-the-last-exit-code
+# it seems that using tput to do the colors breaks readline/history
+# where as using ascii color codes works fine and doesn't mess with
+# readline/history
+PROMPT_COMMAND=__prompt_command
+__prompt_command() {
+    local _lastExit="$?"
+		local _localRepo=$(dotfiles rev-list --max-count=1 master)
+		local _remoteRepo=$(dotfiles rev-list --max-count=1 origin/master)
+		local reset='\[\e[0m\]'
+    local red='\[\e[0;31m\]'
+    local redbold='\[\e[1;31m\]'
+    local green='\[\e[0;32m\]'
+    local yellowbold='\[\e[1;33m\]'
+    local bluebold='\[\e[1;34m\]'
+    local blue='\[\e[0;34m\]'
+    local purple='\[\e[0;35m\]'
 
-export PS1='\[$blue\]\u \[$green\]\h \[$purple\]\w $(dotfile_prompt) \[$reset\]'
+		# show user host and working dir first
+		PS1="${blue}\u${reset} ${green}\h${reset} ${purple}\w${reset} "
+		# test if local working tree is clean or not
+		if git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet
+		then
+			PS1+="${green}c${reset}"
+		else
+			PS1+="${red}d${reset}"
+		fi
+		# test if local repo is in sync with remote
+  	if [[ $_localRepo == "$_remoteRepo" ]]; then
+			PS1+="${green}o${reset} "
+		else
+			PS1+="${redbold}x${reset} "
+		fi
+		# change prompt color based on last command exit status
+    if [ $_lastExit != 0 ]; then
+        PS1+="${red}\$${reset} "
+    else
+        PS1+="${green}\$${reset} "
+    fi
+}
 
 # source platform-specific files
 [ "$(uname)" = "Darwin" ] && source .bashrc_mac || true
