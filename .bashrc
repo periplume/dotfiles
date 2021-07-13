@@ -122,13 +122,14 @@ function dotfiles_status() {
   if [[ $aref == "$bref" ]]; then
     echo "local ${a} ${aref:0:7} ${green}in-sync${reset} with remote ${b} ${bref:0:7}"
   elif [[ $aref == "$base" ]]; then
-    echo "local is ${yellow}behind${reset} $aref $bref"
+		echo "local ${a} ${aref:0:7} is ${yellow}behind${reset} remote ${b} ${bref:0:7}"
 		dotfiles rev-list --left-right --count ${a}...${b}
   elif [[ $bref == "$base" ]]; then
-    echo "local is ${yellow}ahead${reset} $aref $bref"
-  	git --git-dir=$HOME/.dotfiles --work-tree=$HOME rev-list --left-right --count master...origin/master
+		echo "local ${a} ${aref:0:7} is ${yellow}ahead${reset} of remote ${b} ${bref:0:7}"
+		dotfiles rev-list --left-right --count ${a}...${b}
   else
-    echo ${red}diverged${reset} $aref $bref
+		echo "local ${a} ${aref:0:7} is ${red}diverged${reset} from remote ${b} ${bref:0:7}"
+		dotfiles rev-list --left-right --count ${a}...${b}
   fi
 }
 
