@@ -154,6 +154,13 @@ __prompt_command() {
 		else
 			PS1+="${red}d${reset}"
 		fi
+		# test if there are staged files not committed
+		if git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet --cached --exit-code
+		then
+			PS1+="${green}=${reset}"
+		else
+			PS1+="${redbold}-${reset}"
+		fi
 		# test if local repo is in sync with remote
   	if [[ $_localRepo == "$_remoteRepo" ]]; then
 			PS1+="${green}o${reset} "
