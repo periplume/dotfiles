@@ -76,6 +76,7 @@ dotfiles () {
 	then
 		dotfiles_status
 	else
+		# look for push and do it with nohup...and watch for the exit code?
 		/usr/bin/git --git-dir=$HOME/.dotfiles --work-tree=$HOME "$@"
 	fi
 }
