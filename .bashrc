@@ -72,10 +72,13 @@ dotfiles () {
     echo "workflow: ${green}'dotfiles add .bash_profile'${reset}  to add changes to .bash_profile to repo"
 		echo "          'dotfiles commit -m \"fixed such and such\"  to commit changes to repo"
 		echo "          'dotfiles push' to push changes to upstream repo"
+		dotfiles_status
 	else
 		/usr/bin/git --git-dir=$HOME/.dotfiles --work-tree=$HOME "$@"
 	fi
 }
+# add an alias for finger convenience
+alias dotfi=dotfiles
 
 # improve this
 function dotfiles_status() {
