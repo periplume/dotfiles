@@ -77,6 +77,7 @@ dotfiles () {
 	fi
 }
 
+# improve this
 function dotfiles_status() {
 	# fix this shit and call a local and b remote
   local a="master" b="origin/master"
