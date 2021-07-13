@@ -65,14 +65,17 @@ stty -ixon
 
 # dotfiles management with git
 dotfiles () {
-	if [[ $1 = "help" ]] || [[ -z "$1" ]]
+	if [[ $1 = "help" ]]
 	then
 		echo "dotfiles: manage dotfiles with git"
 		echo "usage: dotfiles status|add|commit|push|pull"
     echo "workflow: ${green}'dotfiles add .bash_profile'${reset}  to add changes to .bash_profile to repo"
 		echo "          'dotfiles commit -m \"fixed such and such\"  to commit changes to repo"
 		echo "          'dotfiles push' to push changes to upstream repo"
+	elif [[ -z "$1" ]]
+	then
 		dotfiles_status
+		echo "run dotfiles help for more info"
 	else
 		/usr/bin/git --git-dir=$HOME/.dotfiles --work-tree=$HOME "$@"
 	fi
@@ -82,50 +85,45 @@ alias dotfi=dotfiles
 
 # improve this
 function dotfiles_status() {
-	# fix this shit and call a local and b remote
   local a="master" b="origin/master"
   local base=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME merge-base $a $b )
   local aref=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME rev-parse  $a )
   local bref=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME rev-parse  $b )
 
-	# test if remote is reachable
-	curl ${DOTFILES_REMOTE} -sIo /dev/null
-	if test "$?" -eq 0
-	then
-		echo "remote ${DOTFILES_REMOTE} is ${green}reachable${reset}."
-	else
-		echo "remote ${DOTFILES_REMOTE} is ${red}not reachable${reset}."
-		echo "WARNING: no remote reachable and thus no backup."
-	fi
-
 	# test if local working tree is clean or not
-  git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet
-	if test "$?" -eq 0
+  if dotfiles diff --quiet
 	then
 		echo "local working files are ${green}clean${reset}."
 	else
 		echo "local working files are ${red}dirty${reset}."
-		git --git-dir=$HOME/.dotfiles --work-tree=$HOME status -s
+		dotfiles status -s
 	fi
 	
 	# test if there are staged files not committed
-  git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet --cached --exit-code
-	if test "$?" -eq 0
+  if dotfiles diff --quiet --cached --exit-code
 	then
 		echo "local dotfiles repo is ${green}consistent${reset}."
 	else
 		echo "local dotfiles has ${yellow}uncommited changes${reset}."
 	fi
-
-	# check if remote branch has new changes
-	dotfiles remote update
 	
-	# test sync of local with remote
+	# test if remote is reachable
+	if curl ${DOTFILES_REMOTE} -sIo /dev/null
+	then
+		echo "remote ${DOTFILES_REMOTE} is ${green}reachable${reset}."
+		# update local with changes from remote
+		dotfiles remote update 1> /dev/null || echo "FAILED to update from remote"
+	else
+		echo "remote ${DOTFILES_REMOTE} is ${red}not reachable${reset}."
+		echo "${yellow}WARNING${reset}: no remote reachable and thus no backup."
+	fi
+	
+	# test sync of local with remote refs as tracked in local
   if [[ $aref == "$bref" ]]; then
-    echo "local is ${green}up-to-date${reset} $aref $bref"
-		# TODO let bash snip this string to show first 5 of hash
+    echo "local ${a} ${aref:0:7} ${green}in-sync${reset} with remote ${b} ${bref:0:7}"
   elif [[ $aref == "$base" ]]; then
     echo "local is ${yellow}behind${reset} $aref $bref"
+		dotfiles rev-list --left-right --count ${a}...${b}
   elif [[ $bref == "$base" ]]; then
     echo "local is ${yellow}ahead${reset} $aref $bref"
   	git --git-dir=$HOME/.dotfiles --work-tree=$HOME rev-list --left-right --count master...origin/master
