@@ -113,6 +113,9 @@ function dotfiles_status() {
 	else
 		echo "local dotfiles has ${yellow}uncommited changes${reset}."
 	fi
+
+	# check if remote branch has new changes
+	dotfiles remote update
 	
 	# test sync of local with remote
   if [[ $aref == "$bref" ]]; then
