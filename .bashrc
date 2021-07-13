@@ -112,6 +112,7 @@ function dotfiles_status() {
 		echo "remote ${DOTFILES_REMOTE} is ${green}reachable${reset}."
 		# update local with changes from remote
 		dotfiles remote update 1> /dev/null || echo "FAILED to update from remote"
+  	local bref=$(dotfiles rev-parse  $b )
 	else
 		echo "remote ${DOTFILES_REMOTE} is ${red}not reachable${reset}."
 		echo "${yellow}WARNING${reset}: no remote reachable and thus no backup."
