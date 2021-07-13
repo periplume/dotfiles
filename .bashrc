@@ -1,6 +1,6 @@
 # .bashrc
 # github.com/periplume/dotfiles.git
-
+#set -x
 # TODO make this into an array
 DOTFILES_REMOTE=https://github.com/periplime/dotfiles
 # we can report the number of remotes easily
@@ -39,7 +39,7 @@ reverse=$(tput rev)
 reset=$(tput sgr0)
 
 # set the prompt
-export PS1="\[$blue\]\u \[$green\]\h \[$purple\]\w \[$yellow\]$ \[$reset\]"
+#export PS1="\[$blue\]\u \[$green\]\h \[$purple\]\w \[$yellow\]$ \[$reset\]"
 
 # COLORIZE LESS for man
 man () {
@@ -129,22 +129,30 @@ function dotfiles_status() {
     echo ${red}diverged${reset} $aref $bref
   fi
 }
-# unfinished JKL
-# build PS1 to include =+- in color to represent dotfiles status
-# local = dirty (red) or clean (green)
-# remote = ahead (yellow) or behind (yellow) or same (green) or neither (red)
-# set these as ENV in function called by PS1
+
+# set dynamic prompt displaying various data
 function dotfile_prompt() {
+	_lastExit="$?"
+	_promptString=""
+	# test if local working tree is clean or not
   if git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet
 	then
-		echo "${green}c${reset}"
+		_promptString+="${green}c${reset} "
 	else
-		echo "${red}${reverse}d${reset}"
+		_promptString+="${red}d${reset} "
 	fi
+	# change prompt indicator to red/green based on last command exit status
+	if [ $_lastExit != 0 ]
+	then
+		_promptString+="${red}$ "
+	else
+		_promptString+="${green}$ "
+	fi
+	echo ${_promptString}
 }
 
-export PS1="\[$blue\]\u \[$green\]\h \[$purple\]\w `dotfile_prompt` \[$yellow\]$ \[$reset\]"
+export PS1='\[$blue\]\u \[$green\]\h \[$purple\]\w $(dotfile_prompt) \[$reset\]'
 
 # source platform-specific files
-[ "$(uname)" = "Darwin" ] && source .bashrc_mac
-[ "$(uname)" = "Linux" ] && source .bashrc_linux
+[ "$(uname)" = "Darwin" ] && source .bashrc_mac || true
+[ "$(uname)" = "Linux" ] && source .bashrc_linux || true
