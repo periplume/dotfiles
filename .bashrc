@@ -75,7 +75,6 @@ dotfiles () {
 	elif [[ -z "$1" ]]
 	then
 		dotfiles_status
-		echo "run dotfiles help for more info"
 	else
 		/usr/bin/git --git-dir=$HOME/.dotfiles --work-tree=$HOME "$@"
 	fi
