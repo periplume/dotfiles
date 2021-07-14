@@ -3,20 +3,30 @@
 #set -x
 # TODO make this into an array
 DOTFILES_REMOTE=https://github.com/periplime/dotfiles
+# 
 # we can report the number of remotes easily
 # and iterate through them
+
+# make this bashrc usable in case dotfiles is not working or set up
+# or if we don't have access to git and curl
+if ! hash git
+then
+	DOTFILES_DISABLE=true
+fi
+# i could also consider putting all dotfiles work into its own file and sourcing
+# it?
 
 # if not running interactive shell, exit
 [[ $- != *i* ]] && return
 
-# be quiet
+# be quiet for godsake
 set bell-style visible
 
 # bash history settings
 # append to the history file, don't overwrite it
 shopt -s histappend
 # flush out bash history every command
-PROMPT_COMMAND="history -a;$PROMPT_COMMAND"
+#PROMPT_COMMAND="history -a;$PROMPT_COMMAND"
 # for setting history length see HISTSIZE and HISTFILESIZE in bash(1)
 HISTSIZE=1000
 HISTFILESIZE=10000
@@ -27,6 +37,7 @@ HISTTIMEFORMAT="%F %T %s "
 shopt -s checkwinsize
 
 # set up color variable shortcuts
+# fix this up with better names
 black=$(tput setaf 0)
 red=$(tput setaf 1)
 green=$(tput setaf 2)
@@ -138,9 +149,18 @@ function dotfiles_status() {
 # https://stackoverflow.com/questions/16715103/bash-prompt-with-the-last-exit-code
 # it seems that using tput to do the colors breaks readline/history
 # where as using ascii color codes works fine
+
+# do an if here to check for DOTFILES_DISABLE=true
+# if true, set PS1 as static
+# else, set PROMPT_COMMAND with the fancy function below
+
+# also fix this problem...i was using PROMPT_COMMAND to flush bash history to
+# the history file after every command...which broke...so add the history
+# command to the __prompt_command and the static PS1 build above
 PROMPT_COMMAND=__prompt_command
 __prompt_command() {
     local _lastExit="$?"
+		history -a
 		local _localRepo=$(dotfiles rev-list --max-count=1 master)
 		local _remoteRepo=$(dotfiles rev-list --max-count=1 origin/master)
 		local reset='\[\e[0m\]'
@@ -154,6 +174,7 @@ __prompt_command() {
 
 		# show user host and working dir first
 		PS1="${blue}\u${reset} ${green}\h${reset} ${purple}\w${reset} "
+
 		# test if local working tree is clean or not
 		if git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet
 		then
@@ -161,6 +182,7 @@ __prompt_command() {
 		else
 			PS1+="${red}d${reset}"
 		fi
+
 		# test if there are staged files not committed
 		if git --git-dir=$HOME/.dotfiles --work-tree=$HOME diff --quiet --cached --exit-code
 		then
@@ -168,12 +190,14 @@ __prompt_command() {
 		else
 			PS1+="${redbold}-${reset}"
 		fi
+
 		# test if local repo is in sync with remote
   	if [[ $_localRepo == "$_remoteRepo" ]]; then
 			PS1+="${green}o${reset} "
 		else
 			PS1+="${redbold}x${reset} "
 		fi
+
 		# change prompt color based on last command exit status
     if [ $_lastExit != 0 ]; then
         PS1+="${red}\$${reset} "
