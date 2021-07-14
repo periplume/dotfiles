@@ -206,7 +206,7 @@ __prompt_command() {
   	if [[ $_localRepo == "$_remoteRepo" ]]; then
 			PS1+="${green}o${reset} "
 		else
-			PS1+="${redbold}x${reset} "
+			PS1+="${yellowbold}x${reset} "
 		fi
 
 		# change prompt color based on last command exit status
