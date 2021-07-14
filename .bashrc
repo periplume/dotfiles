@@ -1,16 +1,15 @@
 # .bashrc
 # github.com/periplume/dotfiles.git
 #set -x
+#set -euo pipefail
 # TODO make this into an array
 DOTFILES_REMOTE=https://github.com/periplime/dotfiles
-# we can report the number of remotes easily
-# and iterate through them
 
 # make this bashrc usable in case dotfiles is not working or set up
 # or if we don't have access to git and curl
-if ! hash git
+if ! hash git curl
 then
-	# we can't do what we want to do
+	# we can't do what we want to do without git and curl
 	DOTFILES_DISABLE=true
 else
 	if [ ! -d ~/.dotfiles ]
@@ -31,7 +30,7 @@ set bell-style visible
 shopt -s histappend
 # flush out bash history every command
 #PROMPT_COMMAND="history -a;$PROMPT_COMMAND"
-# note this is dont in the __prompt_command function
+# note this is done in the __prompt_command function
 # for setting history length see HISTSIZE and HISTFILESIZE in bash(1)
 HISTSIZE=1000
 HISTFILESIZE=10000
@@ -93,18 +92,19 @@ dotfiles () {
 		dotfiles_status
 	else
 		# look for push and do it with nohup...and watch for the exit code?
+		# to make the sync upstream "asynchronous" but safe
+		# this needs some thinking and tinkering especially if 2 remotes are used
+		# for RF3
 		/usr/bin/git --git-dir=$HOME/.dotfiles --work-tree=$HOME "$@"
 	fi
 }
 # add an alias for finger convenience
 alias dotfi=dotfiles
 
-# improve this
+# improve this with printf
 function dotfiles_status() {
-  local a="master" b="origin/master"
 	local _localBranchName="master"
 	local _remoteBranchName="origin/master"
-
 
 	# test if local working tree is clean or not
   if dotfiles diff --quiet
@@ -129,21 +129,14 @@ function dotfiles_status() {
 		echo "remote ${DOTFILES_REMOTE} is ${green}reachable${reset}."
 		# update local with changes from remote
 		dotfiles remote update > /dev/null 2>&1 || echo "${red}FAILED${reset} to update from remote"
-		# probably a pull here to put the updated files into place?
-		# no, be careful, need to check the sync status before doing anything
-		# we are just updating the local repo with new changes
-		# if we don't have dirty files and if the repo is consistent
-		# then we can do a pull, which will replace the working tree with the
-		# versions from the remote...ahead of us.
 	else
 		echo "remote ${DOTFILES_REMOTE} is ${red}not reachable${reset}."
 		echo "${yellow}WARNING${reset}: no remote reachable and thus no backup."
 	fi
 
-	# fetch last common ancestor between local and remote 
+	# fetch last common ancestor between local and remote and latest HEAD refs
   local _lastBase=$(dotfiles merge-base $_localBranchName $_remoteBranchName)
-	# fetch last commit hash from local and remote	
-  local _localHead=$(dotfiles rev-parse  $_localBranchName)
+  local _localHead=$(dotfiles rev-parse $_localBranchName)
   local _remoteHead=$(dotfiles rev-parse $_remoteBranchName)
 	
 	# test sync of local with remote refs as tracked in local
