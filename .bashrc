@@ -11,10 +11,18 @@ DOTFILES_REMOTE=https://github.com/periplime/dotfiles
 # or if we don't have access to git and curl
 if ! hash git
 then
+	# we can't do what we want to do
 	DOTFILES_DISABLE=true
+else
+	if [ ! -d ~/.dotfiles ]
+	then
+		echo "PANIC: there are no dotfiles"
+	fi
+	# also, check for ~/.dotfiles dir to proceed
 fi
 # i could also consider putting all dotfiles work into its own file and sourcing
 # it?
+
 
 # if not running interactive shell, exit
 [[ $- != *i* ]] && return
@@ -97,6 +105,10 @@ alias dotfi=dotfiles
 # improve this
 function dotfiles_status() {
   local a="master" b="origin/master"
+	# experiment to simplify
+	local _localRepo=$DOTFILES_LOCAL #string
+	local _remoteRepo=$DOTFILES_REMOTE #list
+
   local base=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME merge-base $a $b )
   local aref=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME rev-parse  $a )
   local bref=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME rev-parse  $b )
@@ -125,7 +137,7 @@ function dotfiles_status() {
 		# update local with changes from remote
 		dotfiles remote update 2>&1 /dev/null || echo "FAILED to update from remote"
 		# reset the bref which is remote a
-  	local bref=$(dotfiles rev-parse  $b )
+  	local bref=$(dotfiles rev-parse  $b)
 		# probably a pull here to put the updated files into place?
 		# no, be careful, need to check the sync status before doing anything
 		# we are just updating the local repo with new changes
