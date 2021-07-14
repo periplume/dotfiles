@@ -3,7 +3,6 @@
 #set -x
 # TODO make this into an array
 DOTFILES_REMOTE=https://github.com/periplime/dotfiles
-# 
 # we can report the number of remotes easily
 # and iterate through them
 
@@ -19,11 +18,7 @@ else
 		echo "PANIC: there are no dotfiles"
 		exit 1
 	fi
-	# also, check for ~/.dotfiles dir to proceed
 fi
-# i could also consider putting all dotfiles work into its own file and sourcing
-# it?
-
 
 # if not running interactive shell, exit
 [[ $- != *i* ]] && return
@@ -36,6 +31,7 @@ set bell-style visible
 shopt -s histappend
 # flush out bash history every command
 #PROMPT_COMMAND="history -a;$PROMPT_COMMAND"
+# note this is dont in the __prompt_command function
 # for setting history length see HISTSIZE and HISTFILESIZE in bash(1)
 HISTSIZE=1000
 HISTFILESIZE=10000
@@ -46,7 +42,7 @@ HISTTIMEFORMAT="%s %F %T "
 shopt -s checkwinsize
 
 # set up color variable shortcuts
-# fix this up with better names
+# TODO fix this up with better names
 black=$(tput setaf 0)
 red=$(tput setaf 1)
 green=$(tput setaf 2)
@@ -106,13 +102,9 @@ alias dotfi=dotfiles
 # improve this
 function dotfiles_status() {
   local a="master" b="origin/master"
-	# experiment to simplify
-	local _localRepo=$DOTFILES_LOCAL #string
-	local _remoteRepo=$DOTFILES_REMOTE #list
+	local _localBranchName="master"
+	local _remoteBranchName="origin/master"
 
-  local base=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME merge-base $a $b )
-  local aref=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME rev-parse  $a )
-  local bref=$( git --git-dir=$HOME/.dotfiles --work-tree=$HOME rev-parse  $b )
 
 	# test if local working tree is clean or not
   if dotfiles diff --quiet
@@ -136,9 +128,9 @@ function dotfiles_status() {
 	then
 		echo "remote ${DOTFILES_REMOTE} is ${green}reachable${reset}."
 		# update local with changes from remote
-		dotfiles remote update 2>&1 /dev/null || echo "FAILED to update from remote"
+		dotfiles remote update > /dev/null 2>&1 || echo "${red}FAILED${reset} to update from remote"
 		# reset the bref which is remote a
-  	local bref=$(dotfiles rev-parse  $b)
+  	#local bref=$(dotfiles rev-parse $b)
 		# probably a pull here to put the updated files into place?
 		# no, be careful, need to check the sync status before doing anything
 		# we are just updating the local repo with new changes
@@ -149,19 +141,28 @@ function dotfiles_status() {
 		echo "remote ${DOTFILES_REMOTE} is ${red}not reachable${reset}."
 		echo "${yellow}WARNING${reset}: no remote reachable and thus no backup."
 	fi
+
+	# fetch last common ancestor between local and remote 
+  local _lastBase=$(dotfiles merge-base $_localBranchName $_remoteBranchName)
+	# fetch last commit hash from local and remote	
+  local _localHead=$(dotfiles rev-parse  $_localBranchName)
+  local _remoteHead=$(dotfiles rev-parse $_remoteBranchName)
 	
 	# test sync of local with remote refs as tracked in local
-  if [[ $aref == "$bref" ]]; then
-    echo "local ${a} ${aref:0:7} ${green}in-sync${reset} with remote ${b} ${bref:0:7}"
+  if [[ $_localHead == "$_remoteHead" ]]; then
+    #echo "local ${a} ${aref:0:7} ${green}in-sync${reset} with remote ${b} ${bref:0:7}"
+    echo "local ${_localBranchName} ${_localHead:0:7} ${green}in-sync${reset} with remote ${_remoteBranchName} ${_remoteHead:0:7}"
   elif [[ $aref == "$base" ]]; then
-		echo "local ${a} ${aref:0:7} is ${yellow}behind${reset} remote ${b} ${bref:0:7}"
-		dotfiles rev-list --left-right --count ${a}...${b}
+		#echo "local ${a} ${aref:0:7} is ${yellow}behind${reset} remote ${b} ${bref:0:7}"
+		echo "local ${_localBranchName} ${_localHead:0:7} is ${yellow}behind${reset} remote ${_remoteBranchName} ${_remoteHead:0:7}"
+		dotfiles rev-list --left-right --count ${_localHead}...${_remoteHead}
   elif [[ $bref == "$base" ]]; then
-		echo "local ${a} ${aref:0:7} is ${yellow}ahead${reset} of remote ${b} ${bref:0:7}"
-		dotfiles rev-list --left-right --count ${a}...${b}
+		#echo "local ${a} ${aref:0:7} is ${yellow}ahead${reset} of remote ${b} ${bref:0:7}"
+		echo "local ${_localBranchName} ${_localHead:0:7} is ${yellow}ahead${reset} of remote ${_remoteBranchName} ${_remoteHead:0:7}"
+		dotfiles rev-list --left-right --count ${_localHead}...${_remoteHead}
   else
-		echo "local ${a} ${aref:0:7} is ${red}diverged${reset} from remote ${b} ${bref:0:7}"
-		dotfiles rev-list --left-right --count ${a}...${b}
+		echo "local ${_localBranchName} ${_localHead:0:7} is ${red}diverged${reset} from remote ${_remoteBranch} ${_remoteHead:0:7}"
+		dotfiles rev-list --left-right --count ${_localHead}...${_remoteHead}
   fi
 }
 
