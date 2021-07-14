@@ -30,7 +30,7 @@ shopt -s histappend
 # for setting history length see HISTSIZE and HISTFILESIZE in bash(1)
 HISTSIZE=1000
 HISTFILESIZE=10000
-HISTTIMEFORMAT="%F %T %s "
+HISTTIMEFORMAT="%s %F %T "
 
 # check the window size after each command and, if necessary,
 # update the values of LINES and COLUMNS.
@@ -106,7 +106,7 @@ function dotfiles_status() {
 	then
 		echo "local working files are ${green}clean${reset}."
 	else
-		echo "local working files are ${red}dirty${reset}."
+		echo "local working files are ${red}dirty${reset}:"
 		dotfiles status -s
 	fi
 	
@@ -124,7 +124,14 @@ function dotfiles_status() {
 		echo "remote ${DOTFILES_REMOTE} is ${green}reachable${reset}."
 		# update local with changes from remote
 		dotfiles remote update 1> /dev/null || echo "FAILED to update from remote"
+		# reset the bref which is remote a
   	local bref=$(dotfiles rev-parse  $b )
+		# probably a pull here to put the updated files into place?
+		# no, be careful, need to check the sync status before doing anything
+		# we are just updating the local repo with new changes
+		# if we don't have dirty files and if the repo is consistent
+		# then we can do a pull, which will replace the working tree with the
+		# versions from the remote...ahead of us.
 	else
 		echo "remote ${DOTFILES_REMOTE} is ${red}not reachable${reset}."
 		echo "${yellow}WARNING${reset}: no remote reachable and thus no backup."
@@ -160,7 +167,9 @@ function dotfiles_status() {
 PROMPT_COMMAND=__prompt_command
 __prompt_command() {
     local _lastExit="$?"
+		# flush out bash history every command
 		history -a
+		# now get to buisness
 		local _localRepo=$(dotfiles rev-list --max-count=1 master)
 		local _remoteRepo=$(dotfiles rev-list --max-count=1 origin/master)
 		local reset='\[\e[0m\]'
