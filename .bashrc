@@ -129,8 +129,6 @@ function dotfiles_status() {
 		echo "remote ${DOTFILES_REMOTE} is ${green}reachable${reset}."
 		# update local with changes from remote
 		dotfiles remote update > /dev/null 2>&1 || echo "${red}FAILED${reset} to update from remote"
-		# reset the bref which is remote a
-  	#local bref=$(dotfiles rev-parse $b)
 		# probably a pull here to put the updated files into place?
 		# no, be careful, need to check the sync status before doing anything
 		# we are just updating the local repo with new changes
@@ -150,16 +148,13 @@ function dotfiles_status() {
 	
 	# test sync of local with remote refs as tracked in local
   if [[ $_localHead == "$_remoteHead" ]]; then
-    #echo "local ${a} ${aref:0:7} ${green}in-sync${reset} with remote ${b} ${bref:0:7}"
     echo "local ${_localBranchName} ${_localHead:0:7} ${green}in-sync${reset} with remote ${_remoteBranchName} ${_remoteHead:0:7}"
-  elif [[ $aref == "$base" ]]; then
-		#echo "local ${a} ${aref:0:7} is ${yellow}behind${reset} remote ${b} ${bref:0:7}"
+  elif [[ $_localHead == "$_lastBase" ]]; then
 		echo "local ${_localBranchName} ${_localHead:0:7} is ${yellow}behind${reset} remote ${_remoteBranchName} ${_remoteHead:0:7}"
-		dotfiles rev-list --left-right --count ${_localHead}...${_remoteHead}
-  elif [[ $bref == "$base" ]]; then
-		#echo "local ${a} ${aref:0:7} is ${yellow}ahead${reset} of remote ${b} ${bref:0:7}"
+		echo "behind by $(dotfiles rev-list --left-right --count ${_localHead}...${_remoteHead} | cut -f2)"
+  elif [[ $_remoteHead == "$_lastBase" ]]; then
 		echo "local ${_localBranchName} ${_localHead:0:7} is ${yellow}ahead${reset} of remote ${_remoteBranchName} ${_remoteHead:0:7}"
-		dotfiles rev-list --left-right --count ${_localHead}...${_remoteHead}
+		echo "ahead by $(dotfiles rev-list --left-right --count ${_localHead}...${_remoteHead} | cut -f1)"
   else
 		echo "local ${_localBranchName} ${_localHead:0:7} is ${red}diverged${reset} from remote ${_remoteBranch} ${_remoteHead:0:7}"
 		dotfiles rev-list --left-right --count ${_localHead}...${_remoteHead}
