@@ -123,7 +123,7 @@ function dotfiles_status() {
 	then
 		echo "remote ${DOTFILES_REMOTE} is ${green}reachable${reset}."
 		# update local with changes from remote
-		dotfiles remote update 1> /dev/null || echo "FAILED to update from remote"
+		dotfiles remote update 2>&1 /dev/null || echo "FAILED to update from remote"
 		# reset the bref which is remote a
   	local bref=$(dotfiles rev-parse  $b )
 		# probably a pull here to put the updated files into place?
