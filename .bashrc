@@ -17,6 +17,7 @@ else
 	if [ ! -d ~/.dotfiles ]
 	then
 		echo "PANIC: there are no dotfiles"
+		exit 1
 	fi
 	# also, check for ~/.dotfiles dir to proceed
 fi
