@@ -3,13 +3,13 @@
 #set -x
 #set -euo pipefail
 # TODO make this into an array
-DOTFILES_REMOTE=https://github.com/periplime/dotfiles
+DOTFILES_REMOTE=https://github.com/periplume/dotfiles
 
 # make this bashrc usable in case dotfiles is not working or set up
 # or if we don't have access to git and curl
-if ! hash git curl
+if ! hash git 
 then
-	# we can't do what we want to do without git and curl
+	# we can't do what we want to do without git
 	DOTFILES_DISABLE=true
 else
 	if [ ! -d ~/.dotfiles ]
@@ -124,7 +124,7 @@ function dotfiles_status() {
 	fi
 	
 	# test if remote is reachable
-	if curl ${DOTFILES_REMOTE} -sIo /dev/null
+	if dotfiles ls-remote --head ${DOTFILES_REMOTE} >/dev/null 2>&1
 	then
 		echo "remote ${DOTFILES_REMOTE} is ${green}reachable${reset}."
 		# update local with changes from remote
