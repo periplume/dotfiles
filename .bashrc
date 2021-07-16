@@ -6,7 +6,7 @@
 DOTFILES_REMOTE=https://github.com/periplume/dotfiles
 
 # make this bashrc usable in case dotfiles is not working or set up
-# or if we don't have access to git and curl
+# or if we don't have access to git
 if ! hash git 
 then
 	# we can't do what we want to do without git
