@@ -5,6 +5,9 @@
 # TODO make this into an array
 DOTFILES_REMOTE=https://github.com/periplume/dotfiles
 
+DOTFILES=enable
+[ ${DOTFILES} = "enable" ] && [ -f bin/gitdisk ] && source bin/gitdisk || exit 1
+
 # make this bashrc usable in case dotfiles is not working or set up
 # or if we don't have access to git
 if ! hash git 
