@@ -1,0 +1,723 @@
+#!/usr/bin/env bash
+# file: studio.install
+# source: https://github.com/periplume/studio.git
+# author: jason@bloom.us
+
+# bash best practice settings
+set -o errexit
+set -o nounset
+set -o pipefail
+
+# bash debugging
+#set -x
+
+# script identifiers
+# self (without path)
+scriptname=${0##*/}
+dirname=$(dirname "$PWD")
+
+# currently a manual process...automate this in build flow
+STUDIO_VERSION="1.0"
+
+##REQUIREMENTS
+#
+# list of required command line tools we require
+required_commands="date tput ip awk sort head tail ping curl cut nmcli dig wmctrl nmap"
+
+# required project subdirectories
+required_subdirectories="bin code data"
+
+# MODE SETTINGS
+#
+# send messages to logfile (true)
+# suppress log messages (false) *default
+STUDIO_MODE_LOG=false
+#
+# include verbose debug messages (true)
+# suppress verbose debug messages (false) *default
+STUDIO_MODE_DEBUG=false
+#
+# prompt user for input (true) *default
+# no questions asked (false)
+STUDIO_MODE_INTERACTIVE=true
+#
+# leave no trace of logs or config (true) *default
+# allow logs and config into persistant storage (false)
+STUDIO_MODE_SAFE=true
+#
+# attempt to manipulate the terminal (true)
+# leave display alone (false) *default
+STUDIO_MODE_TERMCONTROL=false
+#
+# force into OFFLINE mode (true)
+# access and use online resources (false) *default
+STUDIO_MODE_OFFLINE=false
+#
+# OVERRIDE MODES
+#
+# set up git repo, enable DEBUG and LOG modes, disable SAFE mode (true)
+# do not set up git repo (false) *default
+STUDIO_MODE_DEVELOPER=false
+#
+# suppress messages to console and disable INTERACTIVE mode (true)
+# output messages to console (false) *default
+STUDIO_MODE_SILENT=false
+
+
+printUsage () {
+  cat << EOF
+
+usage: $scriptname [OPTIONS] command [OPTIONS]
+
+options:
+ -h(elp)             print this usage page
+ -o(ffline)          force into offline mode
+ -l(og)              log to logfile
+ -q(uiet)            silent mode
+ -p(rint)            print verbose debug messages
+ -t(erm)             control terminal
+ -n(oninteractive)   non-interactive mode
+ -d(eveloper)        developer mode
+ -u(n-safe)          unsafe mode
+ -b(ranch)           specify branch tag
+ -v(ersion)          print version
+
+commands:
+ check               perform tests to validate environment
+ build               build studio from scratch
+ run                 run and enter studio
+ upgrade             upgrade $scriptname
+ image               image a new usb key
+ git-checkout        git clone project
+ git-commit          git commit $scriptname
+ git-push            git push to github (or equiv)
+
+for command specific usage, eg:
+$ $scriptname check help
+
+EOF
+}
+
+printInfo () {
+  cat << EOF
+
+studio.install automates the process of testing, installing,
+and launching a console-based container for use as a reliable
+and portable terminal working environment, eg:
+ - writing with vim
+ - development environment
+ - reusable lab stations
+ - secure portable usb system
+it does a few other things too, as documented below.
+EOF
+}
+
+nonZeroExit () {
+	# desc: catch non-zero errors, print error, exit
+	line=$1
+	shift 1
+	echo "ERROR: non-zero exit from line $line: $@"
+	exit 1
+}
+
+setStudioHome () {
+	# desc: set STUDIO_HOME
+	local install
+	if [ -f "$PWD/.STUDIO_HOME" ]
+	then
+		# PWD is STUDIO_HOME and studio is already installed, ideal
+		export STUDIO_HOME=$PWD
+		export STUDIO_LOGDIR="$STUDIO_HOME/data/.state/logs"
+		export STUDIO_LIB_DIR="$STUDIO_HOME/code/build"
+		export STUDIO_LOGFILE="$STUDIO_LOGDIR/$scriptname.log"
+		export STUDIO_SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+		export STUDIO_SCRIPT_PARENT="$(dirname "${STUDIO_SCRIPT_DIR}")"
+		export STUDIO_PWD="$PWD"
+		install=true
+	elif [ $(basename $PWD) = "bin" ]
+	then
+		# PWD is bin and likely running in host os (not in container)
+		echo "FATAL: PWD is bin dir...are you in the container?"
+		echo "STUDIO_HOME=$STUDIO_HOME PWD=$PWD"
+		exit 1
+	elif [ $(basename $PWD) = "build" ]
+	then
+		# running from source code dir
+		echo "FATAL: PWD is the source code directory...run 'cd ../..' and retry"
+		echo "STUDIO_HOME=$STUDIO_HOME PWD=$PWD"
+		exit 1
+	else
+		echo "FATAL: PWD is not aligned properly"
+		echo "STUDIO_HOME=$STUDIO_HOME PWD=$PWD"
+		exit 1
+	fi
+}
+
+sourceStudioFiles () {
+	# desc: once STUDIO_HOME is set, source the library files
+	source "${STUDIO_LIB_DIR}/studio.library"
+	source "${STUDIO_LIB_DIR}/studio.terminal"
+	source "${STUDIO_LIB_DIR}/studio.network"
+	source "${STUDIO_LIB_DIR}/studio.docker"
+	source "${STUDIO_LIB_DIR}/studio.environment"
+	source "${STUDIO_LIB_DIR}/studio.imaging"
+}
+
+setStudioHomeOld () {
+	# figure out if this script is standalone (needing to fetch the rest)
+	# or in the same directory with the helper files (unpacked together)
+	# set variables accordingly
+	# also source library files if appropriate
+	local install
+	if [ -f "$PWD/.STUDIO_HOME" ]
+	then
+		export STUDIO_HOME=$PWD
+		install=true
+	fi
+	if [ "$STUDIO_MODE_INTERACTIVE" = true ] && [ -z $install ]
+	then
+		attempts=3
+		while [ "$attempts" -gt 0 ]
+		do
+			# try tput to manually start colorized output for consistency
+			if command -v tput &> /dev/null
+			then
+				REVERSE=$(tput smso)
+				RESET=$(tput sgr0)
+				CYAN=$(tput setaf 6)
+				YELLOW=$(tput setaf 3)
+				RED=$(tput setaf 1)
+			fi
+			echo -n "${CYAN}${REVERSE}USER${RESET} enter directory to install [${YELLOW}$PWD${RESET}] : "
+			read -r INSTALLDIR
+			if [ ${INSTALLDIR:-$PWD} = "." ] && [ -w "$PWD" ]
+			then
+				export STUDIO_HOME=$PWD
+				break
+			elif [ -z "$INSTALLDIR" ] && [ -w "$PWD" ]
+			then
+				export STUDIO_HOME=$PWD
+				break
+			elif [ -n "$INSTALLDIR" ] && [ -w "$INSTALLDIR" ]
+			then
+				export STUDIO_HOME=$INSTALLDIR
+				break
+			else
+				echo "${RED}ERROR${RESET} valid and writable path is required to install"
+				attempts=$((attempts-1))
+			fi
+			if [ "$attempts" = 0 ]
+			then
+				echo "${RED}ERROR${RESET} quitting...find valid install directory and try again."
+				exit 1
+			fi
+		done
+	else
+		if [ -f "$PWD/studio.environment" ] && [ -z $install ]
+		then
+			# running from within the source code directory
+			# check one dir up
+			echo "${RED}why${RESET} did this pass?"
+			parentdir=$(dirname "$PWD")
+			studio_home_install_file="$parentdir/.STUDIO_HOME"
+			if [ -w "$parentdir" ]
+			then
+				# parent dir is writable
+				if [ -w "$studio_home_install_file" ]
+				then
+					# studio already installed
+					# get the install timestamp
+					export STUDIO_INSTALL_TIMESTAMP=$(<"$studio_home_install_file")
+					export STUDIO_HOME="$parentdir"
+				else
+					# no install file....first time running
+					# touch the install file and add timestamp
+					echo "FIXME: no .STUDIO_HOME file, touching now"
+					touch "$studio_home_install_file"
+					echo $(date +%s) > "$studio_home_install_file"
+					export STUDIO_INSTALL_TIMESTAMP=$(<"$studio_home_install_file")
+					export STUDIO_HOME="$parentdir"
+				fi
+			else
+				# parent dir is not writable...this is a package
+				echo "FIXME: setting STUDIO_HOME failed...$PWD but no writable parent"
+				exit 1
+			fi
+		elif [ -f "$PWD/lib/studio.environment" ] && [ -w "$PWD" ] && [ -z $STUDIO_HOME ]
+		then
+			studio_home_install_file="$PWD/.STUDIO_HOME"
+			if [ -w "$studio_home_install_file" ]
+			then
+				export STUDIO_INSTALL_TIMESTAMP=$(<"$studio_home_install_file")
+				export STUDIO_HOME="$PWD"
+			else
+				echo "FATAL: SOMETHING VERY WRONG HERE"
+				exit 1
+			fi
+		fi
+	fi
+	export STUDIO_LOGDIR="$STUDIO_HOME/logs"
+	export STUDIO_LOGFILE="$STUDIO_LOGDIR/$scriptname.log"
+	export STUDIO_SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+	export STUDIO_SCRIPT_PARENT="$(dirname "${STUDIO_SCRIPT_DIR}")"
+	export STUDIO_PWD="$PWD"
+	# look for library files in $PWD, if not, look in $PWD/code, if not, fetch
+	if [ -f "$PWD/studio.environment" ]
+	then
+		STUDIO_LIB_DIR="$PWD"
+	elif [ -f "$PWD/lib/studio.environment" ]
+	then
+		STUDIO_LIB_DIR="$PWD/lib"
+	else
+		echo "ERROR: standalone script situation detected; function not implemented"
+		# if ONLINE=false, complain
+		# if ONLINE=true, fetch full studio package
+		exit 1
+	fi
+	source "${STUDIO_LIB_DIR}/studio.library"
+	source "${STUDIO_LIB_DIR}/studio.terminal"
+	source "${STUDIO_LIB_DIR}/studio.network"
+	source "${STUDIO_LIB_DIR}/studio.docker"
+	source "${STUDIO_LIB_DIR}/studio.environment"
+	source "${STUDIO_LIB_DIR}/studio.imaging"
+	# catch ctrl-c and ask for confirmation
+	trap irishExit SIGINT
+	colorize || logEvent 1 MAIN "colorize failed"
+	if [ -z ${install+x} ]
+	then
+		logEvent 0 $FUNCNAME "no prior studio installation detected"
+	elif [ ${install} = "true" ]
+	then
+		installdate=$(<$STUDIO_HOME/.STUDIO_HOME)
+		logEvent 0 $FUNCNAME "STUDIO install detected at $STUDIO_HOME with timestamp $installdate"
+	else
+		echo "ERROR no match on $install"
+	fi
+	logEvent 0 $FUNCNAME "STUDIO_HOME set to $STUDIO_HOME"
+	logEvent 0 $FUNCNAME "STUDIO_LIB_DIR set to $STUDIO_LIB_DIR"
+	logEvent 0 $FUNCNAME "STUDIO library files sourced"
+}
+
+# MAIN COMMAND OPTION PROCESSING
+#
+# check for -h (help) flag first
+while getopts ":h" optHelp
+do
+	case ${optHelp} in 
+		h)
+			printInfo
+			printUsage
+			exit 0
+			;;
+	esac
+done
+unset OPTIND
+
+# check for -v (version) flag and print version info
+while getopts ":v" optVersion
+do
+	case ${optVersion} in
+		v)
+			echo "$scriptname version: $STUDIO_VERSION"
+			exit 0
+			;;
+	esac
+done
+unset OPTIND
+
+# next check for SILENT MODE 
+# INTERACTIVE and SILENT are mutually incompatible
+while getopts ":q" optSilent; do
+	case ${optSilent} in
+		q)
+			export STUDIO_MODE_SILENT=true
+			export STUDIO_MODE_INTERACTIVE=false
+			break
+			;;
+	esac
+done
+unset OPTIND
+
+# main command option processing
+while getopts ":olqptndub:v" optMain; do
+	case ${optMain} in
+		o)
+			export STUDIO_MODE_OFFLINE=true
+			;;
+		l)
+			export STUDIO_MODE_LOG=true
+			;;
+		q)
+			export STUDIO_MODE_SILENT=true
+			;;
+		p)
+			export STUDIO_MODE_DEBUG=true
+			;;
+		t)
+			export STUDIO_MODE_TERMCONTROL=true
+			;;
+		n)
+			if [ $STUDIO_MODE_SILENT = "true" ]
+			then
+				echo "ERROR: $scriptname: -q and -n mutually incompatible"
+				printUsage
+				exit 1
+			else
+				export STUDIO_MODE_INTERACTIVE=false
+			fi
+			;;
+		d)
+			export STUDIO_MODE_DEVELOPER=true
+			export STUDIO_MODE_DEBUG=true
+			export STUDIO_MODE_LOG=true
+			export STUDIO_MODE_SILENT=false
+			;;
+		u)
+			export STUDIO_MODE_SAFE=false
+			;;
+		b)
+			export STUDIO_BRANCHTAG=$OPTARG
+			echo "branch specified: $STUDIO_BRANCHTAG"
+			;;
+		v)
+			echo "$scriptname version: $version"
+			exit 0
+			;;
+		\?)
+			echo "ERROR: $scriptname -$OPTARG invalid option" 1>&2
+			printUsage
+			exit 1
+			;;
+	esac
+done
+shift $((OPTIND -1))
+
+# check for existence of legal command
+if [ -z $1 ]
+then
+	echo "ERROR: $scriptname command required"
+	printUsage
+	exit 1
+else
+	case $1 in
+		check|build|run|upgrade|image)
+			true
+			;;
+		*)
+			echo "ERROR: $scriptname: $1: unknown command"
+			printUsage
+			exit 1
+			;;
+	esac
+fi
+
+# set STUDIO_HOME, source files, catch ctrl-c with trap
+setStudioHome
+sourceStudioFiles
+trap irishExit SIGINT
+colorize || logEvent 1 MAIN "colorize failed"
+
+# (sub)command option processing
+case "${1}" in
+	check)
+		while getopts ":fh" opt; do
+			case ${opt} in
+				h)
+					echo "PRINT ${1} usage here"
+					exit 0
+					;;
+				f)
+					isOnlineArg="full"
+					;;
+				\?)
+					echo "ERROR: INVALID OPTION to ${1}: -$OPTARG ${opt}" 1>&2
+					exit 1
+					;;
+			esac
+		done
+		shift $((OPTIND -1))
+		# TODO store stateful test pass/fail results in cfg/
+		getTermType
+		#setUID (need to rewrite function)
+		setTZ
+		setLocale
+		checkDirs
+		checkTools
+		checkInstalled
+		if [ $STUDIO_MODE_TERMCONTROL = "true" ]
+		then
+			termSet
+		fi
+		if [ $STUDIO_MODE_OFFLINE = "true" ]
+		then
+			logEvent 1 MAIN "STUDIO_MODE_OFFLINE set to true, skipping network tests"
+		else
+			isOnline ${isOnlineArg:="simple"}
+		fi
+		printCheckStatus
+		;;
+	build)
+		# flags to incorporate
+		# STUDIO_BUILD_INCLUDE_MANPAGES
+		# flag to build command -m
+		# flag to build to specify tag -t <tag>
+		image=periplume/studio
+		tag=v6
+		imagetag=$image:$tag
+		OPENSSL_VER="1.1.1f"
+		PYTHON_VER="3.7.7"
+		USER_NAME=$(whoami)
+		USER_ID=$(id -u)
+		GROUP_NAME=$(id -ng)
+		GROUP_ID=$(id -g)
+		#echo "PWD=$PWD and STUDIO_HOME=$STUDIO_HOME"
+		# make sure PWD = STUDIO_HOME
+		#(docker build --tag $imagetag \
+		# 	--build-arg OPENSSL_VER=${OPENSSL_VER} \
+		# 	--build-arg PYTHON_VER=${PYTHON_VER} \
+		#	--build-arg USER_NAME=${USER_NAME} \
+		#	--build-arg USER_ID=${USER_ID} \
+		#	--build-arg GROUP_NAME=${GROUP_NAME} \
+		#	--build-arg GROUP_ID=${GROUP_ID} \
+		# 	--file ${STUDIO_HOME}/code/Dockerfile . \
+		#	> ${STUDIO_LOGDIR}/docker_build.log 3>&1) &
+		#pid=$!
+		#spinner $pid
+		#wait $pid
+		echo "building docker image now"
+		(docker build --tag $imagetag --force-rm=true \
+			--iidfile=${STUDIO_LOGDIR}/docker.build.id \
+		 	--build-arg OPENSSL_VER=${OPENSSL_VER} \
+		 	--build-arg PYTHON_VER=${PYTHON_VER} \
+			--build-arg USER_NAME=${USER_NAME} \
+			--build-arg USER_ID=${USER_ID} \
+			--build-arg GROUP_NAME=${GROUP_NAME} \
+			--build-arg GROUP_ID=${GROUP_ID} \
+		 	--file ${STUDIO_HOME}/code/docker/Dockerfile . \
+			> ${STUDIO_LOGDIR}/docker_build.log 3>&1) & 
+		pid=$!
+		spinner $pid
+		wait $pid
+		exit 0
+		;;
+	run)
+		image=periplume/studio
+		tag=v6
+		imagetag=$image:$tag
+		docker run -it \
+			-v ${STUDIO_HOME}/bin:/studio/bin \
+			-v ${STUDIO_HOME}/code:/studio/code \
+			-v ${STUDIO_HOME}/data:/studio/data \
+			--mount type=tmpfs,destination=/studio/tmp \
+			--env TERM=${TERM} \
+			--env TZ=$(cat /etc/timezone) \
+			--user $(id -u):$(id -g) \
+		 	$imagetag
+		exit 0
+		;;
+	upgrade)
+		echo "cmd called: $@"
+		exit 0
+		;;
+	image)
+		echo "cmd called: $@"
+		echo "cmd args: $@"
+		imageusb
+		;;
+	status)
+		echo "cmd called: $@"
+		exit 0
+		;;
+	git-checkout)
+		echo "cmd called: $@"
+		exit 0
+		;;
+	git-commit)
+		echo "cmd called: $@"
+		exit 0
+		;;
+	git-push)
+		echo "cmd called: $@"
+		exit 0
+		;;
+	*)
+		printUsage
+		exit 1
+		;;
+esac
+
+# SIMULATE IN-STUDIO
+sleep 2 &
+pid=$!
+spinner $pid
+wait $pid
+
+# STATE details
+STUDIO_TIMESTAMP=$(getTime)
+STUDIO_HOST=$(hostname)
+STUDIO_HOST_OS=$(uname -a)
+# print and save state
+printStudioState
+#seconds=$(getTime)
+#printStudioState > ${STUDIO_HOME}/cfg/STUDIO_STATE.$seconds
+
+
+# return from fullscreen
+wmctrl -r ':ACTIVE:' -b remove,fullscreen
+# this does not work if the active screen is other than the fullscreen studio
+
+# note: use bash -r (restricted mode) when DEVELOPER_MODE=false
+# inside container to prevent directory change etc
+# non-developer mode will be a chroot env with only studio commands
+
+# next
+# add self-test: compare to git version
+# add upgrade option
+# add docker identification
+# add docker build
+# add launch function to enter container
+
+#TODO
+# set STUDIO_EDITOR
+# set STUDIO_PAGER
+# set STUDIO_SHELL
+# check for term 24bit
+#[[ $COLORTERM =~ ^(truecolor|24bit)$ ]]
+# look at uuidgen for uuid support
+
+
+###
+# 
+#!/usr/bin/env bash
+# file: studio.functions
+# source: https://github.com/periplume/studio.git
+# author: jason@bloom.us
+version=1.0
+scriptname=${0##*/}
+
+##FUNCTIONS
+timestamp () {
+  # desc: return a timestamp for logging (human and machine readable)
+  # args: none
+  # return format: 'YYYY-MM-DD HH:MM:SS UNIX-TIME'
+  date '+%F %T %s'
+}
+
+getTime () {
+	# desc: return a timestamp in Unix seconds
+	date '+%s'
+}
+
+spinner () {
+  # timeless whirligig to indicate we're waiting on a long running task
+  # care of http://fitnr.com/showing-a-bash-spinner.html
+  local pid=$1
+  local delay=0.75
+  local spinstr='|/-\'
+  while [ "$(ps a | awk '{print $1}' | grep $pid)" ]; do
+    local temp=${spinstr#?}
+    printf "+${GREEN}${BOLD}${REVERSE}%c${RESET} " "$spinstr"
+    local spinstr=$temp${spinstr%"$temp"}
+    sleep $delay
+    printf "\b\b\b\b\b\b\b"
+  done
+  printf "    \b\b\b\b"
+}
+
+printStudioState () {
+	for i in ${!STUDIO*}
+	do
+		eval echo $i="$"$i
+	done
+}
+
+printCheckStatus () {
+	# test ENV TERM NET ... basically the same as modules
+	if [ $STUDIO_MODE_SILENT = "true" ]
+	then
+		return 0
+	fi
+	if [ $STUDIO_MODE_OFFLINE = "true" ]
+	then
+		echo "${YELLOW}${REVERSE}${BLINK}OFFLINE   ${RESET}"
+	else
+		echo "${GREEN}${REVERSE}${BLINK}ONLINE    ${RESET}"
+	fi
+	if [ $STUDIO_MODE_TERMCONTROL = "true" ]
+	then
+		echo "${GREEN}${REVERSE}${BLINK}TERM CTL  ${RESET}"
+	else
+		echo "${YELLOW}${REVERSE}${BLINK}TERM CTL  ${RESET}"
+	fi
+	if [[ $STUDIO_MODE_TERMCONTROL = "true" ]]
+	then
+		echo "${GREEN}${REVERSE}${BLINK}FULLSCREEN${RESET}"
+	else
+		echo "${YELLOW}${REVERSE}${BLINK}WINDOWED  ${RESET}"
+	fi
+	if [ $STUDIO_ENV_TOOLSOK = "true" ]
+	then
+		echo "${GREEN}${REVERSE}${BLINK}CMD TEST  ${RESET}"
+	else
+		echo "${YELLOW}${REVERSE}${BLINK}CMD TEST  ${RESET}"
+	fi
+}
+
+
+# logEvent LEVEL SOURCE MESSAGE
+# where LEVEL defines event type
+# LEVEL 0 = DEBUG (everything)
+# LEVEL 1 = INFO (expected)
+# LEVEL 2 = WARNING (unexpected)
+# LEVEL 3 = ERROR (fatal)
+# where SOURCE identifies the source of the message
+# SOURCE = $FUNCNAME (eg)
+# where MESSAGE is the message string
+# GLOBAL STUDIO_MODE_LOG toggles logfile messages
+# GLOBAL STUDIO_MODE_SILENT toggles console messages
+# GLOBAL STUDIO_MODE_DEBUG toggles debugging messages
+logEvent () {
+	loglevel=$1
+	logsource=$2
+	logmessage=${@:3}
+  if [ $STUDIO_MODE_LOG = "false" ] && [ $STUDIO_MODE_SILENT = "true" ]
+  then
+    return 0
+  elif [ $STUDIO_MODE_LOG = "true" ] && [ $STUDIO_MODE_SILENT = "true" ]
+  then
+    echo "[$(timestamp)] $scriptname $logsource $loglevel: $logmessage" >> $STUDIO_LOGFILE
+    return 0
+	elif [ $STUDIO_MODE_SILENT = "false" ]
+	then
+    if [ "$loglevel" = "0" ] && [ $STUDIO_MODE_LOG = "true" ]
+    then
+      echo "${MAGENTA}DEBUG${RESET} $logmessage"
+    elif [ "$loglevel" = "1" ]
+		then
+      echo "${GREEN}INFO${RESET} $logmessage"
+    elif [ "$loglevel" = "2" ]
+    then
+      echo "${YELLOW}WARNING${RESET} $logmessage"
+    elif [ "$loglevel" = "3" ]
+    then
+      echo "${RED}ERROR${RESET} $logmessage"
+    fi
+    echo "[$(timestamp)] $scriptname $logsource $loglevel: $logmessage" >> $STUDIO_LOGFILE
+    return 0
+  fi
+}
+
+irishExit () {
+	echo -ne "\r${YELLOW}WARNING${RESET} are you sure you want to quit? Press ${REVERSE}q${RESET} to quit"
+	read -t 15 -n 1 ANS
+	if [ ${ANS:-n} = "q" ]
+	then
+		echo
+		logEvent 1 $FUNCNAME "user initiated quit routine, exiting prematurely"
+		exit 1
+	else
+		echo
+		logEvent 0 $FUNCNAME "hit ${REVERSE}ENTER${RESET} to continue"
+		return 0
+	fi
+}
