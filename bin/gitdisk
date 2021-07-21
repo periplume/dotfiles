@@ -14,6 +14,24 @@ set -o pipefail
 # use "main" as the initial and main branch instead of deprecated "master"
 _initialBranch="main"
 
+# check that our version of git supports this (git >= 2.28)
+if ! hash git; then
+	echo "ERROR: git is required"
+	exit 1
+else
+	_gitVersion=$(git --version | cut -d' ' -f3)
+	echo "DEBUG: git version is ${_gitVersion}"
+	_gitMajor=$(echo ${_gitVersion} | cut -d. -f1)
+	_gitMinor=$(echo ${_gitVersion} | cut -d. -f2)
+	if [ ${_gitMajor} -eq 2 ] && [ ${_gitMinor} -ge 28 ]; then
+		echo "DEBUG: OK: git version ${_gitVersion} is >= 2.28"
+	else
+		echo "ERROR: git version ${_gitVersion} is not >= 2.28"
+		echo "       upgrade git to 2.28 or later to proceed with gitdisk"
+		exit 1
+	fi
+fi
+
 # FUNCTIONS
 printUsage () {
   cat << EOF
@@ -86,6 +104,12 @@ _isNameValid() {
 			*[^a-z0-9.-]* ) echo "INVALID: not lowercase or number"; return 1 ;; 
 		esac
 	fi
+}
+
+_isPathAllowed() {
+	# arg = desired path for new gitdisk
+	# check permissions
+	echo "hello world"
 }
 
 # command line processing
