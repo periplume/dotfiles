@@ -6,7 +6,7 @@
 DOTFILES_REMOTE=https://github.com/periplume/dotfiles
 
 DOTFILES=enable
-[ ${DOTFILES} = "enable" ] && [ -f bin/gitdisk ] && source bin/gitdisk || exit 1
+#[ ${DOTFILES} = "enable" ] && [ -f bin/gitdisk ] && source bin/gitdisk || exit 1
 
 PATH=~/bin:$PATH
 
