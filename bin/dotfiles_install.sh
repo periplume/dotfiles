@@ -63,6 +63,7 @@ git --git-dir=$HOME/.dotfiles --work-tree=$HOME config --local status.showUntrac
 repofiles=$(git --no-pager --git-dir=$HOME/.dotfiles/ --work-tree=$HOME ls-tree -r master | awk '{print $4}')
 # we can do this without awk i'm sure!
 # make backups of the dotfiles about to be replaced
+# TODO this is not safe!
 for i in $repofiles
 do
 	if [ -f $i ]
