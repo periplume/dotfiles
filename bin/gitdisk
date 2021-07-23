@@ -10,7 +10,9 @@ set -o pipefail
 
 # bash debugging
 #set -x
-
+red=$(tput setaf 1)
+green=$(tput setaf 2)
+reset=$(tput sgr0)
 # use "main" as the initial and main branch instead of deprecated "master"
 _initialBranch="main"
 
@@ -86,22 +88,36 @@ _isNameValid() {
 	local _strLength=${#_requestedName}
 	echo "DEBUG: _requestedName=${_requestedName}"
 	echo "DEBUG: _strLength=${#_requestedName}"
-	# check length first
-	if [ ${_strLength} -lt ${_minChar} -o ${_strLength} -gt ${_maxChar} ]; then
-		echo "INVALID: length"
+	# if i could make a good regex i would 
+	# check first char first...must be lowercase or number	
+	if [[ ! ${_requestedName} =~ ^[[:lower:]|[:digit:]] ]]; then
+			echo "${red}INVALID${reset}: first char must be letter or digit"
+			return 1
+	# check string length
+	elif [ ${_strLength} -lt ${_minChar} -o ${_strLength} -gt ${_maxChar} ]; then
+		echo "${red}INVALID${reset}: length violation"
 		return 1
+	# check last char...must be lower or number
+	elif [[ ! ${_requestedName} =~ [[:lower:]|[:digit:]]$ ]]; then
+			echo "${red}INVALID${reset}: last char must be letter or digit"
+			return 1
+	# check for allowed characters
+	elif [[ ! ${_requestedName} =~ ^([[:lower:]|[:digit:]]|[-.])*$ ]]; then
+			echo "${red}INVALID${reset}: only lower, digit, hyphen and period allowed"
+			return 1
 	else
-		# check for conditions we deem illegal
+		# check for other conditions we deem illegal
 		case ${_requestedName} in
-			-* ) echo "INVALID: leading -"; return 1 ;;
-			.* ) echo "INVALID: leading ."; return 1 ;;
-			*. ) echo "INVALID: trailing ."; return 1 ;;
-			*- ) echo "INVALID: trailing -"; return 1 ;;
-			*--* ) echo "INVALID: double dash"; return 1 ;;
-			*..* ) echo "INVALID: double dot"; return 1 ;;
-			*.-* ) echo "INVALID: dash follows dot"; return 1 ;;
-			*-.* ) echo "INVALID: dot follows dash"; return 1 ;;
-			*[^a-z0-9.-]* ) echo "INVALID: not lowercase or number"; return 1 ;; 
+			#-* ) echo "${red}INVALID${reset}: leading -"; return 1 ;;
+			#.* ) echo "${red}INVALID${reset}: leading ."; return 1 ;;
+			#*. ) echo "${red}INVALID${reset}: trailing ."; return 1 ;;
+			#*- ) echo "${red}INVALID${reset}: trailing -"; return 1 ;;
+			*--* ) echo "${red}INVALID${reset}: double dash"; return 1 ;;
+			*..* ) echo "${red}INVALID${reset}: double dot"; return 1 ;;
+			*.-* ) echo "${red}INVALID${reset}: dash follows dot"; return 1 ;;
+			*-.* ) echo "${red}INVALID${reset}: dot follows dash"; return 1 ;;
+			#*[[:upper:]]* ) echo "${red}INVALID${reset}: no capitals"; return 1 ;;
+			#*[[:space:]]* ) echo "${red}INVALID${reset}: no non-printable chars"; return 1 ;;
 		esac
 	fi
 }
