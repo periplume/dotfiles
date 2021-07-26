@@ -10,11 +10,19 @@ set -o pipefail
 
 # bash debugging
 #set -x
+
+# some color
 red=$(tput setaf 1)
 green=$(tput setaf 2)
 reset=$(tput sgr0)
+
+
 # use "main" as the initial and main branch instead of deprecated "master"
 _initialBranch="main"
+# set the maximum length of a gitdisk (directory) name
+_maxChar=25
+# set the min length of a gitdisk (directory) name
+_minChar=2
 
 # check that our version of git supports this (git >= 2.28)
 if ! hash git; then
@@ -82,13 +90,10 @@ _isNameValid() {
 	#             first and last not - or .
 	#							no double dash or dot
 	#							no dash follows dot and vice versa
-	local _maxChar=25
-	local _minChar=2
 	local _requestedName="${@}"
 	local _strLength=${#_requestedName}
 	echo "DEBUG: _requestedName=${_requestedName}"
 	echo "DEBUG: _strLength=${#_requestedName}"
-	# if i could make a good regex i would 
 	# check first char first...must be lowercase or number	
 	if [[ ! ${_requestedName} =~ ^[[:lower:]|[:digit:]] ]]; then
 			echo "${red}INVALID${reset}: first char must be letter or digit"
@@ -108,25 +113,20 @@ _isNameValid() {
 	else
 		# check for other conditions we deem illegal
 		case ${_requestedName} in
-			#-* ) echo "${red}INVALID${reset}: leading -"; return 1 ;;
-			#.* ) echo "${red}INVALID${reset}: leading ."; return 1 ;;
-			#*. ) echo "${red}INVALID${reset}: trailing ."; return 1 ;;
-			#*- ) echo "${red}INVALID${reset}: trailing -"; return 1 ;;
 			*--* ) echo "${red}INVALID${reset}: double dash"; return 1 ;;
 			*..* ) echo "${red}INVALID${reset}: double dot"; return 1 ;;
 			*.-* ) echo "${red}INVALID${reset}: dash follows dot"; return 1 ;;
 			*-.* ) echo "${red}INVALID${reset}: dot follows dash"; return 1 ;;
-			#*[[:upper:]]* ) echo "${red}INVALID${reset}: no capitals"; return 1 ;;
-			#*[[:space:]]* ) echo "${red}INVALID${reset}: no non-printable chars"; return 1 ;;
 		esac
 	fi
 }
 
-_isPathAllowed() {
-	# arg = desired path for new gitdisk
-	# check permissions
-	echo "hello world"
-}
+# TODO functions for create
+# _setDesiredPath: read ARG1, determine full or relative, export VARS
+# _isNameValid: check for allowed names
+# _isPathEmpty: check for existing
+# _isPathWritable: check permissions
+# _createGitdisk: git init _desiredPath
 
 # command line processing
 _getOpts () {
@@ -167,6 +167,10 @@ _getOpts () {
 			if [[ "${2}" = /* ]]; then
 				_desiredPath="${2}"
 				_desiredName=$(basename "${2}")
+			elif [[ "${2}" = ..* ]]; then
+        echo "${red}ERR${reset} no path redirects"; exit 1
+      elif [[ "${2}" = ./* ]]; then
+        echo "${red}ERR${reset}: fix this into relative path, strip 1st 2 chars"; exit 1
 			else
 				_desiredPath="${_workDir}/${2}"
 				_desiredName=${2}
