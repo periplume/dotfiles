@@ -177,7 +177,7 @@ _getOpts () {
 				echo "ERROR: invalid name"; exit 1
 			fi
 			# if writable and empty
-			if [[ -w "$(dirname ${_desiredPath})" ]] && [[ ! -d "${_desiredPath}" ]]; then
+			if [[ -w $(dirname "${_desiredPath}") ]] && [[ ! -d "${_desiredPath}" ]]; then
 				echo "OK: path is writable and empty"
 				if git init -q -b "${_initialBranch}" "${_desiredPath}"; then
 					echo "OK: created gitdisk as ${_desiredPath}"
