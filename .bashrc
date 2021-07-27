@@ -92,6 +92,17 @@ dotfiles () {
     echo "workflow: ${green}'dotfiles add .bash_profile'${reset}  to add changes to .bash_profile to repo"
 		echo "          'dotfiles commit -m \"fixed such and such\"  to commit changes to repo"
 		echo "          'dotfiles push' to push changes to upstream repo"
+	elif [[ $1 = "save" ]]; then
+		_commitMsg="dotfi save by $USER"
+		git --git-dir=$HOME/.dotfiles --work-tree=$HOME commit -a -m "${_commitMsg}"
+		git --git-dir=$HOME/.dotfiles --work-tree=$HOME push
+		echo "TODO check for errors...check consistency"
+		echo "safe writes...check that in-sync...add an arbitrary timer to"
+		echo " add random into a race condition...rare though it could be"
+		# TODO can we track "how" dirty is the working file?
+		#      also check how many commits behind
+		#      then calculate a dirty score as a VAR and change the = which is
+		#      bypassed
 	elif [[ -z "$1" ]]
 	then
 		dotfiles_status
