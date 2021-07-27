@@ -121,10 +121,55 @@ _isNameValid() {
 	fi
 }
 
+_setDesiredPath() {
+	# read $1
+	# export _desiredPath and _desiredName
+	if [ -z "${1}" ]; then
+		echo "DEBUG: _setDesiredPath requires an argument"
+		return 1
+	else
+			local _workDir="$(pwd)"
+			echo "DEBUG: cmd called: $@"
+			echo "DEBUG: _LOG=${_LOG:-}"
+			echo "DEBUG: _workDir=${_workDir}"
+			# figure out the path; full or relative path allowed
+			if [[ "${1}" = /* ]]; then
+				_desiredPath="${1}"
+				_desiredName=$(basename "${1}")
+			elif [[ "${1}" = ..* ]]; then
+        echo "${red}ERR${reset} no path redirects"; exit 1
+      elif [[ "${1}" = ./* ]]; then
+        echo "${red}ERR${reset}: fix this into relative path, strip 1st 2 chars"; exit 1
+      elif [[ "${1}" = . ]]; then
+				_desiredPath="${_workDir}"
+				_desiredName=$(basename "${_workDir}")
+			else
+				_desiredPath="${_workDir}/${1}"
+				_desiredName=${1}
+			fi
+			echo "DEBUG: desired path is '${_desiredPath}'"
+			echo "DEBUG: desired name is '${_desiredName}'"
+	fi
+}
+
+_isPathWritable() {
+	# arg 1 = full path
+	# return 0 if writable and no .git dir (existing gitdisk)
+	# if writable and empty
+	set -x
+	if [ -z "${1}" ]; then
+		echo "DEBUG: _isPathWritable requires an argument"
+		return 1
+	elif [[ -d "${1}/.git" ]]; then
+		echo "${red}ERROR${reset}: .git exists in ${1}"; exit 1
+	elif [[ -w "${1}" ]]; then
+		return 0
+	fi
+}
+
 # TODO functions for create
-# _setDesiredPath: read ARG1, determine full or relative, export VARS
 # _isNameValid: check for allowed names
-# _isPathEmpty: check for existing
+# _isPathEmpty: check for existing (or not)
 # _isPathWritable: check permissions
 # _createGitdisk: git init _desiredPath
 
@@ -153,33 +198,19 @@ _getOpts () {
 			# create              create a local gitdisk
 			# usage: create <name> where <name> is a full or relative path to PWD
 			if [[ -z "${2:-}" ]]; then
-				echo "ERROR: usage: gitdisk create <name>"
+				echo "${red}ERROR${reset}: usage: gitdisk create <name>"
 				echo "       <name> must be a full path or relative to PWD"
 				exit 1
+			else _setDesiredPath "${2}"
 			fi
-			local _desiredPath
-			local _desiredName
-			local _workDir="$(pwd)"
-			echo "NOTICE: cmd called: $@"
-			echo "NOTICE: _LOG=${_LOG:-}"
-			echo "NOTICE: workdir=${_workDir}"
-			# figure out the path; full or relative path allowed
-			if [[ "${2}" = /* ]]; then
-				_desiredPath="${2}"
-				_desiredName=$(basename "${2}")
-			elif [[ "${2}" = ..* ]]; then
-        echo "${red}ERR${reset} no path redirects"; exit 1
-      elif [[ "${2}" = ./* ]]; then
-        echo "${red}ERR${reset}: fix this into relative path, strip 1st 2 chars"; exit 1
-			else
-				_desiredPath="${_workDir}/${2}"
-				_desiredName=${2}
-			fi
-			echo "NOTICE: desired path is ${_desiredPath}"
-			echo "NOTICE: desired name is ${_desiredName}"
 			if ! _isNameValid ${_desiredName}; then
-				echo "ERROR: invalid name"; exit 1
+				echo "${red}ERROR${reset}: invalid name"; exit 1
 			fi
+			if _isPathWritable "${_desiredPath}"; then
+				echo "${green}YES${reset}: ${_desiredPath} is writable"
+				exit 0
+			fi
+			exit 
 			# if writable and empty
 			if [[ -w $(dirname "${_desiredPath}") ]] && [[ ! -d "${_desiredPath}" ]]; then
 				echo "OK: path is writable and empty"
