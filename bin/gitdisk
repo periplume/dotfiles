@@ -14,6 +14,7 @@ set -o pipefail
 # some color
 red=$(tput setaf 1)
 green=$(tput setaf 2)
+yellow=$(tput setaf 3)
 reset=$(tput sgr0)
 
 
@@ -82,9 +83,10 @@ low-level gitdisk read and write command.
 EOF
 }
 
+# _isNameValid: check for allowed names
 _isNameValid() {
 	# arg = name
-	# return 0 if legal, 1 if illegal
+	# return 0 if valid, 1 if valid
 	# legal name: max char = 25, min=2
 	#             a-z 0-9 - .
 	#             first and last not - or .
@@ -121,9 +123,10 @@ _isNameValid() {
 	fi
 }
 
+# _setDesiredPath: take path arg and set name and path variables
 _setDesiredPath() {
 	# read $1
-	# export _desiredPath and _desiredName
+	# set _desiredPath and _desiredName and _desiredBase
 	if [ -z "${1}" ]; then
 		echo "DEBUG: _setDesiredPath requires an argument"
 		return 1
@@ -140,6 +143,7 @@ _setDesiredPath() {
         echo "${red}ERR${reset} no path redirects"; exit 1
       elif [[ "${1}" = ./* ]]; then
         echo "${red}ERR${reset}: fix this into relative path, strip 1st 2 chars"; exit 1
+				# TODO fix this in case path is explicitly relative
       elif [[ "${1}" = . ]]; then
 				_desiredPath="${_workDir}"
 				_desiredName=$(basename "${_workDir}")
@@ -147,31 +151,75 @@ _setDesiredPath() {
 				_desiredPath="${_workDir}/${1}"
 				_desiredName=${1}
 			fi
+			_desiredBase=$(dirname "${_desiredPath}")
 			echo "DEBUG: desired path is '${_desiredPath}'"
 			echo "DEBUG: desired name is '${_desiredName}'"
+			echo "DEBUG: desired base is '${_desiredBase}'"
+			# TODO make sure to always strip off trailing slash
 	fi
 }
 
+# _isPathWritable: take path arg and determine if we can write
 _isPathWritable() {
 	# arg 1 = full path
-	# return 0 if writable and no .git dir (existing gitdisk)
-	# if writable and empty
-	set -x
+	# return 0 if writable, 1 if not writable
 	if [ -z "${1}" ]; then
 		echo "DEBUG: _isPathWritable requires an argument"
 		return 1
-	elif [[ -d "${1}/.git" ]]; then
-		echo "${red}ERROR${reset}: .git exists in ${1}"; exit 1
-	elif [[ -w "${1}" ]]; then
-		return 0
+	elif [ ! -w "${1}" ]; then
+		#echo "DEBUG: ${1} is not writable"
+		return 1
+	fi	
+}
+
+# _isPathEmpty: return 0 if path contains no files
+_isPathEmpty() {
+	# arg 1 = full path
+	# return 0 if empty, return 1 if not empty
+	if [ -z "${1}" ]; then
+		echo "DEBUG: _isPathEmpty requires an argument"
+		return 1
+	elif [ ! -z "$(ls -A ${1} 2>/dev/null)" ]; then
+		#echo "DEBUG: $?: ${1} is NOT empty"
+		return 1
 	fi
 }
 
+# _isPathNew: check if path already exists or not
+_isPathNew() {
+	# arg 1 = full path
+	# return 0 if new; return 1 if exists 
+	if [ -z "${1}" ]; then
+		echo "DEBUG: _isPathNew requires an argument"
+		return 1
+	elif [ -d "${1}" ]; then
+		#echo "DEBUG: ${1} exists"
+		return 1
+	fi
+}
+
+# _isPathGitdisk: check for existence of gitdisk
+_isPathGitdisk() {
+	# arg 1 = full path
+	# return 0 if gitdisk, return 1 if not
+	if [ -z "${1}" ]; then
+		echo "DEBUG: _isPathGitdisk requires an argument"
+		return 1
+	elif [[ ! -d "${1}/.git" ]]; then
+		return 1
+	else
+		#echo "DEBUG: .git exists in ${1}"
+		# TODO add check for gitdisk marker
+		return 0
+	fi
+}
+	
+
 # TODO functions for create
-# _isNameValid: check for allowed names
-# _isPathEmpty: check for existing (or not)
-# _isPathWritable: check permissions
 # _createGitdisk: git init _desiredPath
+#  create a gitdisk marker -- uuid, timestamp, user, host
+#   make markers programable...so something with state can use that as a marker
+#   put it in description file and state/ tree with id-object blobs
 
 # command line processing
 _getOpts () {
@@ -203,26 +251,43 @@ _getOpts () {
 				exit 1
 			else _setDesiredPath "${2}"
 			fi
-			if ! _isNameValid ${_desiredName}; then
-				echo "${red}ERROR${reset}: invalid name"; exit 1
-			fi
-			if _isPathWritable "${_desiredPath}"; then
-				echo "${green}YES${reset}: ${_desiredPath} is writable"
-				exit 0
-			fi
-			exit 
-			# if writable and empty
-			if [[ -w $(dirname "${_desiredPath}") ]] && [[ ! -d "${_desiredPath}" ]]; then
-				echo "OK: path is writable and empty"
-				if git init -q -b "${_initialBranch}" "${_desiredPath}"; then
-					echo "OK: created gitdisk as ${_desiredPath}"
-				fi
-			# if not writable
-			elif [[ ! -w "${_desiredPath}" ]]; then
-				echo "ERROR: path ${_desiredPath} is not writable"; exit 1
+			if _isNameValid ${_desiredName}; then
+				echo "${green}OK${reset}: ${_desiredName} is a valid name"
 			else
-				echo "ERROR: path ${_desiredPath} is not empty"; exit 1
-			fi	
+				echo "${red}ERROR${reset}: invalid name"
+				exit 1
+			fi
+			if _isPathNew "${_desiredPath}"; then
+				echo "${green}OK${reset}: ${_desiredPath} is new"
+				if _isPathWritable "${_desiredBase}"; then
+					echo "${green}OK${reset}: ${_desiredBase} is writable"
+				else
+					echo "${red}ERROR${reset}: ${_desiredBase} is not writable"
+					exit 1
+				fi
+			else
+				echo "${yellow}WARNING${reset}: ${_desiredPath} already exists"
+				if _isPathEmpty "${_desiredPath}"; then
+					echo "${green}OK${reset}: ${_desiredPath} is empty"
+				else
+					echo "${yellow}WARNING${reset}: ${_desiredPath} is not empty"
+					echo "${yellow}INFO${reset}: add force flags to continue"
+					exit 1
+					if _isPathGitdisk "${_desiredPath}"; then
+						echo "${yellow}WARNING${reset}: ${_desiredPath} is a gitdisk"
+						echo "${yellow}INFO${reset}: add force flags to continue"
+						exit 1
+					fi
+				fi
+			fi
+			echo "${green}OK${reset}: all conditions passed...creating gitdisk"
+			git init -q -b "${_initialBranch}" "${_desiredPath}"
+			if [ $? = 0 ]; then
+				echo "${green}OK${reset}: gitdisk created at ${_desiredPath}"
+			else
+				echo "${red}ERROR${reset}: gitdisk failed to create ${_desiredPath}"
+				exit 1
+			fi
 			;;
 		mirror)
 			# mirror              attach a mirror repo
