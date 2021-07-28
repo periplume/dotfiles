@@ -86,7 +86,7 @@ EOF
 # _isNameValid: check for allowed names
 _isNameValid() {
 	# arg = name
-	# return 0 if valid, 1 if valid
+	# return 0 (yes) if valid, 1 (no) if invalid
 	# legal name: max char = 25, min=2
 	#             a-z 0-9 - .
 	#             first and last not - or .
@@ -132,8 +132,6 @@ _setDesiredPath() {
 		return 1
 	else
 			local _workDir="$(pwd)"
-			echo "DEBUG: cmd called: $@"
-			echo "DEBUG: _LOG=${_LOG:-}"
 			echo "DEBUG: _workDir=${_workDir}"
 			# figure out the path; full or relative path allowed
 			if [[ "${1}" = /* ]]; then
@@ -162,7 +160,7 @@ _setDesiredPath() {
 # _isPathWritable: take path arg and determine if we can write
 _isPathWritable() {
 	# arg 1 = full path
-	# return 0 if writable, 1 if not writable
+	# return 0 (yes) if writable, 1 (no) if not writable
 	if [ -z "${1}" ]; then
 		echo "DEBUG: _isPathWritable requires an argument"
 		return 1
@@ -213,13 +211,22 @@ _isPathGitdisk() {
 		return 0
 	fi
 }
-	
 
-# TODO functions for create
 # _createGitdisk: git init _desiredPath
-#  create a gitdisk marker -- uuid, timestamp, user, host
-#   make markers programable...so something with state can use that as a marker
-#   put it in description file and state/ tree with id-object blobs
+_createGitdisk() {
+	# arg 1 = full path
+	# return 0 on success, 1 on fail
+	local _uuidMark=$(uuidgen | tr "[:upper:]" "[:lower:]")
+	local _timestampUnix=$(date +%s)
+	local _gitdiskSignature="gitdisk: $USER $HOSTNAME ${_timestampUnix} ${_uuidMark}"
+	if [ -z "${1}" ]; then
+		echo "DEBUG: _createGitdisk requires an argument"
+		return 1
+	else
+		git init -q -b "${_initialBranch}" "${1}"
+		echo "${_gitdiskSignature}" > "${1}/.git/description"
+	fi
+}
 
 # command line processing
 _getOpts () {
@@ -234,7 +241,7 @@ _getOpts () {
  	      echo "VERSION: betaitch"; exit 0
 				;;
 			l)
-				export _LOG=true
+				_LOG=true
 				;;
 		esac
 	done
@@ -245,6 +252,10 @@ _getOpts () {
 		create)
 			# create              create a local gitdisk
 			# usage: create <name> where <name> is a full or relative path to PWD
+			# TODO add --forceNonempty and --forceGitdisk to override
+			echo "DEBUG: cmd called: $@"
+			echo "DEBUG: _LOG=${_LOG:-}"
+			echo "DEBUG: _forceNonempty=${_forceNonempty:-}"
 			if [[ -z "${2:-}" ]]; then
 				echo "${red}ERROR${reset}: usage: gitdisk create <name>"
 				echo "       <name> must be a full path or relative to PWD"
@@ -270,19 +281,23 @@ _getOpts () {
 				if _isPathEmpty "${_desiredPath}"; then
 					echo "${green}OK${reset}: ${_desiredPath} is empty"
 				else
-					echo "${yellow}WARNING${reset}: ${_desiredPath} is not empty"
-					echo "${yellow}INFO${reset}: add force flags to continue"
-					exit 1
 					if _isPathGitdisk "${_desiredPath}"; then
+						_signature=$(cat "${_desiredPath}/.git/description")
 						echo "${yellow}WARNING${reset}: ${_desiredPath} is a gitdisk"
-						echo "${yellow}INFO${reset}: add force flags to continue"
+						echo "${yellow}INFO${reset}: ${_signature}"
+						echo "${yellow}TODO${reset}: add force flag to re-initialize gitdisk"
+						echo "${red}ERROR${reset}: could not create due to existing gitdisk"
+						exit 1
+					else
+						echo "${yellow}WARNING${reset}: ${_desiredPath} is not empty"
+						echo "${yellow}TODO${reset}: add force flag to add non-empty dir"
+						echo "${red}ERROR${reset}: could not create due to non-empty path"
 						exit 1
 					fi
 				fi
 			fi
 			echo "${green}OK${reset}: all conditions passed...creating gitdisk"
-			git init -q -b "${_initialBranch}" "${_desiredPath}"
-			if [ $? = 0 ]; then
+			if _createGitdisk "${_desiredPath}"; then
 				echo "${green}OK${reset}: gitdisk created at ${_desiredPath}"
 			else
 				echo "${red}ERROR${reset}: gitdisk failed to create ${_desiredPath}"
