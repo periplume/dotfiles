@@ -25,6 +25,9 @@ _maxChar=25
 # set the min length of a gitdisk (directory) name
 _minChar=2
 
+_gitdiskConfig=$(dirname ~/.)
+_gitdiskConfig+="/.gitdisk"
+
 # check that our version of git supports this (git >= 2.28)
 if ! hash git; then
 	echo "ERROR: git is required"
@@ -225,6 +228,10 @@ _createGitdisk() {
 	else
 		git init -q -b "${_initialBranch}" "${1}"
 		echo "${_gitdiskSignature}" > "${1}/.git/description"
+		# this will become a gitdisk.tab file (a la fstab)
+		# fields
+		# uuid path user hostname timestamp
+		echo "${_uuidMark} ${1} $USER $HOSTNAME ${_timestampUnix}" >> ~/.gitdisk/gitdisk.tab
 	fi
 }
 
@@ -253,9 +260,14 @@ _getOpts () {
 			# create              create a local gitdisk
 			# usage: create <name> where <name> is a full or relative path to PWD
 			# TODO add --forceNonempty and --forceGitdisk to override
+			#      add --type=hidden to allow dot prefix eg "dot gitdisk" eg .hidden
 			echo "DEBUG: cmd called: $@"
 			echo "DEBUG: _LOG=${_LOG:-}"
 			echo "DEBUG: _forceNonempty=${_forceNonempty:-}"
+			if [ ! -d ~/.gitdisk ]; then
+				echo "${red}ERROR${reset}: run 'gitdisk init' first"
+				exit 1
+			fi
 			if [[ -z "${2:-}" ]]; then
 				echo "${red}ERROR${reset}: usage: gitdisk create <name>"
 				echo "       <name> must be a full path or relative to PWD"
@@ -304,6 +316,20 @@ _getOpts () {
 				exit 1
 			fi
 			;;
+		init)
+			# set up ~/.gitdisk and gitdisktab
+			echo "cmd called: $@"
+			echo "_LOG=${_LOG:-}"
+			if [ -d "${_gitdiskConfig}" ]; then
+				echo "${red}ERROR${reset}: gitdisk already installed"
+				exit 1
+			else
+				_createGitdisk "${_gitdiskConfig}"
+				echo "logs/" >> "${_gitdiskConfig}/.gitignore"
+				mkdir "${_gitdiskConfig}/logs"
+				touch "${_gitdiskConfig}/gitdisk.tab"
+			fi	
+			;;	
 		mirror)
 			# mirror              attach a mirror repo
 			echo "cmd called: $@"
