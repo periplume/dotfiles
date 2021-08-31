@@ -8,64 +8,107 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-# bash debugging
+# debugging and logging settings
 #set -x
+# script debug toggle (set to true to enable global debugging)
+_DEBUG=false
+# silent mode for scripting (supresses stdout/stderr)
+_SILENT=false
+# logging facility
+_LOG=true
+#if [ ! -d "${_dotGitdisk:-}" ]; then
+#	_LOG=false
+#fi
 
 # some color
 red=$(tput setaf 1)
 green=$(tput setaf 2)
 yellow=$(tput setaf 3)
+cyan=$(tput setaf 6)
 reset=$(tput sgr0)
 
-
-# use "main" as the initial and main branch instead of deprecated "master"
+# use "main" as the initial and main branch instead of deprecated indelicate "master"
 _initialBranch="main"
 # set the maximum length of a gitdisk (directory) name
 _maxChar=25
 # set the min length of a gitdisk (directory) name
 _minChar=2
 
-_gitdiskConfig=$(dirname ~/.)
-_gitdiskConfig+="/.gitdisk"
+# store gitdisk state and logs in $HOME/.gitdisk
+_gitdiskConfig=.gitdisk
+_dotGitdisk="$(dirname ~/.)/${_gitdiskConfig}"
+_logFile="${_dotGitdisk}/logs/gitdisk.log"
 
-# check that our version of git supports this (git >= 2.28)
-if ! hash git; then
-	echo "ERROR: git is required"
-	exit 1
-else
-	_gitVersion=$(git --version | cut -d' ' -f3)
-	echo "DEBUG: git version is ${_gitVersion}"
-	_gitMajor=$(echo ${_gitVersion} | cut -d. -f1)
-	_gitMinor=$(echo ${_gitVersion} | cut -d. -f2)
-	if [ ${_gitMajor} -eq 2 ] && [ ${_gitMinor} -ge 28 ]; then
-		echo "DEBUG: OK: git version ${_gitVersion} is >= 2.28"
-	else
-		echo "ERROR: git version ${_gitVersion} is not >= 2.28"
-		echo "       upgrade git to 2.28 or later to proceed with gitdisk"
-		exit 1
+# logging and debug functions
+_log() {
+	# write logs to persistent logfile
+	# FORMAT: timestamp [USER|INFO|DEBUG] "message"
+	local _timeStamp=$(date +%s)
+	local _logMessage="${@:-}"
+	[ ${_LOG} = false ] && return
+	[ -f ${_logFile} ] || mkdir -p "${_dotGitdisk}/logs" && touch ${_logFile}
+	printf "${_timeStamp} ${_logMessage}\n" >> "${_logFile}"
+}
+
+_debug() {
+	# write debug info to stdout and/or log
+	local _debugMessage="${@:-}"
+	# if debug is not enabled, ignore and return
+	[ ${_DEBUG} = false ] && return
+	# if debug is true and _SILENT is not true, print debug to terminal
+	if [ ${_DEBUG} = true ] && [ ! ${_SILENT} = true ]; then
+		printf "${cyan}DEBUG${reset}: ${_debugMessage}\n"
 	fi
-fi
+	# send to log facility
+	_log DEBUG "${_debugMessage}"
+}
 
-# FUNCTIONS
-printUsage () {
+# die verbally
+_fatal() {
+	echo "FATAL: $@"
+	exit 1
+}
+
+_isGitReady() {
+	# check that our version of git supports this (git >= 2.28)
+	if ! hash git; then
+		_debug "ERROR: git is required"
+		exit 1
+	else
+		_gitVersion=$(git --version | cut -d' ' -f3)
+		_debug "INFO: git version is ${_gitVersion}"
+		_gitMajor=$(echo ${_gitVersion} | cut -d. -f1)
+		_gitMinor=$(echo ${_gitVersion} | cut -d. -f2)
+		if [ ${_gitMajor} -eq 2 ] && [ ${_gitMinor} -ge 28 ]; then
+			_debug "INFO: git version ${_gitVersion} is >= 2.28"
+			return 0
+		else
+			_debug "ERROR: git version ${_gitVersion} is not >= 2.28"
+			_debug "INFO: upgrade git to 2.28 or later to use gitdisk"
+			exit 1
+		fi
+	fi
+}
+
+_printUsage () {
   cat << EOF
 
 usage: gitdisk [OPTIONS] command [OPTIONS]
 
 options:
- -h(elp)             print this usage page
- -l(og)              log to logfile
- -v(ersion)          print version
+ -h      print this usage info
+ -l      log commands and debug info to log file
+ -d      print debug info to stdout and/or log
+ -s      suppress all stdout/stderr
+ -v      print version number and exit
 
 commands:
  create              create a local gitdisk
  mirror              attach a mirror repo
  import              import a remote gitdisk
  sync                sync to remote(s)
- new                 add a new item to gitdisk
- mv                  move item within gitdisk
- rm                  remove item from gitdisk
- open                open item
+ put                 add a new item to gitdisk
+ get                 retrieve an object
 
 for command specific usage, eg:
 $ gitdisk create help
@@ -86,8 +129,8 @@ low-level gitdisk read and write command.
 EOF
 }
 
-# _isNameValid: check for allowed names
 _isNameValid() {
+	# _isNameValid: check for allowed names
 	# arg = name
 	# return 0 (yes) if valid, 1 (no) if invalid
 	# legal name: max char = 25, min=2
@@ -97,31 +140,31 @@ _isNameValid() {
 	#							no dash follows dot and vice versa
 	local _requestedName="${@}"
 	local _strLength=${#_requestedName}
-	echo "DEBUG: _requestedName=${_requestedName}"
-	echo "DEBUG: _strLength=${#_requestedName}"
+	_debug "INFO: _requestedName=${_requestedName}"
+	_debug "INFO: _strLength=${#_requestedName}"
 	# check first char first...must be lowercase or number	
 	if [[ ! ${_requestedName} =~ ^[[:lower:]|[:digit:]] ]]; then
-			echo "${red}INVALID${reset}: first char must be letter or digit"
+			_debug "INVALID: first char must be letter or digit"
 			return 1
 	# check string length
 	elif [ ${_strLength} -lt ${_minChar} -o ${_strLength} -gt ${_maxChar} ]; then
-		echo "${red}INVALID${reset}: length violation"
+		_debug "INVALID: length violation"
 		return 1
 	# check last char...must be lower or number
 	elif [[ ! ${_requestedName} =~ [[:lower:]|[:digit:]]$ ]]; then
-			echo "${red}INVALID${reset}: last char must be letter or digit"
+			_debug "INVALID: last char must be letter or digit"
 			return 1
 	# check for allowed characters
 	elif [[ ! ${_requestedName} =~ ^([[:lower:]|[:digit:]]|[-.])*$ ]]; then
-			echo "${red}INVALID${reset}: only lower, digit, hyphen and period allowed"
+			_debug "INVALID: only lower, digit, hyphen and period allowed"
 			return 1
 	else
 		# check for other conditions we deem illegal
 		case ${_requestedName} in
-			*--* ) echo "${red}INVALID${reset}: double dash"; return 1 ;;
-			*..* ) echo "${red}INVALID${reset}: double dot"; return 1 ;;
-			*.-* ) echo "${red}INVALID${reset}: dash follows dot"; return 1 ;;
-			*-.* ) echo "${red}INVALID${reset}: dot follows dash"; return 1 ;;
+			*--* ) _debug "INVALID: double dash"; return 1 ;;
+			*..* ) _debug "INVALID: double dot"; return 1 ;;
+			*.-* ) _debug "INVALID: dash follows dot"; return 1 ;;
+			*-.* ) _debug "INVALID: dot follows dash"; return 1 ;;
 		esac
 	fi
 }
@@ -131,19 +174,19 @@ _setDesiredPath() {
 	# read $1
 	# set _desiredPath and _desiredName and _desiredBase
 	if [ -z "${1}" ]; then
-		echo "DEBUG: _setDesiredPath requires an argument"
+		_debug "ERROR: _setDesiredPath requires an argument"
 		return 1
 	else
 			local _workDir="$(pwd)"
-			echo "DEBUG: _workDir=${_workDir}"
+			_debug "INFO: _workDir=${_workDir}"
 			# figure out the path; full or relative path allowed
 			if [[ "${1}" = /* ]]; then
 				_desiredPath="${1}"
 				_desiredName=$(basename "${1}")
 			elif [[ "${1}" = ..* ]]; then
-        echo "${red}ERR${reset} no path redirects"; exit 1
+        _debug "ERROR: no path redirects"; exit 1
       elif [[ "${1}" = ./* ]]; then
-        echo "${red}ERR${reset}: fix this into relative path, strip 1st 2 chars"; exit 1
+        _debug "INFO: fix this into relative path, strip 1st 2 chars"; exit 1
 				# TODO fix this in case path is explicitly relative
       elif [[ "${1}" = . ]]; then
 				_desiredPath="${_workDir}"
@@ -153,9 +196,9 @@ _setDesiredPath() {
 				_desiredName=${1}
 			fi
 			_desiredBase=$(dirname "${_desiredPath}")
-			echo "DEBUG: desired path is '${_desiredPath}'"
-			echo "DEBUG: desired name is '${_desiredName}'"
-			echo "DEBUG: desired base is '${_desiredBase}'"
+			_debug "INFO: desired path is '${_desiredPath}'"
+			_debug "INFO: desired name is '${_desiredName}'"
+			_debug "INFO: desired base is '${_desiredBase}'"
 			# TODO make sure to always strip off trailing slash
 	fi
 }
@@ -165,10 +208,10 @@ _isPathWritable() {
 	# arg 1 = full path
 	# return 0 (yes) if writable, 1 (no) if not writable
 	if [ -z "${1}" ]; then
-		echo "DEBUG: _isPathWritable requires an argument"
+		_debug "ERROR: _isPathWritable requires an argument"
 		return 1
 	elif [ ! -w "${1}" ]; then
-		#echo "DEBUG: ${1} is not writable"
+		_debug "ERROR: ${1} is not writable"
 		return 1
 	fi	
 }
@@ -178,10 +221,10 @@ _isPathEmpty() {
 	# arg 1 = full path
 	# return 0 if empty, return 1 if not empty
 	if [ -z "${1}" ]; then
-		echo "DEBUG: _isPathEmpty requires an argument"
+		_debug "ERROR: _isPathEmpty requires an argument"
 		return 1
 	elif [ ! -z "$(ls -A ${1} 2>/dev/null)" ]; then
-		#echo "DEBUG: $?: ${1} is NOT empty"
+		_debug "ERROR: $?: ${1} is NOT empty"
 		return 1
 	fi
 }
@@ -191,10 +234,10 @@ _isPathNew() {
 	# arg 1 = full path
 	# return 0 if new; return 1 if exists 
 	if [ -z "${1}" ]; then
-		echo "DEBUG: _isPathNew requires an argument"
+		_debug "ERROR: _isPathNew requires an argument"
 		return 1
 	elif [ -d "${1}" ]; then
-		#echo "DEBUG: ${1} exists"
+		_debug "ERROR: ${1} exists"
 		return 1
 	fi
 }
@@ -204,12 +247,12 @@ _isPathGitdisk() {
 	# arg 1 = full path
 	# return 0 if gitdisk, return 1 if not
 	if [ -z "${1}" ]; then
-		echo "DEBUG: _isPathGitdisk requires an argument"
+		_debug "ERROR: _isPathGitdisk requires an argument"
 		return 1
 	elif [[ ! -d "${1}/.git" ]]; then
 		return 1
 	else
-		#echo "DEBUG: .git exists in ${1}"
+		_debug "ERROR: .git exists in ${1}"
 		# TODO add check for gitdisk marker
 		return 0
 	fi
@@ -223,165 +266,306 @@ _createGitdisk() {
 	local _timestampUnix=$(date +%s)
 	local _gitdiskSignature="gitdisk: $USER $HOSTNAME ${_timestampUnix} ${_uuidMark}"
 	if [ -z "${1}" ]; then
-		echo "DEBUG: _createGitdisk requires an argument"
+		_debug "ERROR: _createGitdisk requires an argument"
 		return 1
 	else
-		git init -q -b "${_initialBranch}" "${1}"
+		git init -q -b "${_initialBranch}" "${1}" || _log "create failed: err?"
 		echo "${_gitdiskSignature}" > "${1}/.git/description"
 		# this will become a gitdisk.tab file (a la fstab)
 		# fields
 		# uuid path user hostname timestamp
 		echo "${_uuidMark} ${1} $USER $HOSTNAME ${_timestampUnix}" >> ~/.gitdisk/gitdisk.tab
+		_log "created ${_uuidMark} at ${1} by $USER on $HOSTNAME"
 	fi
 }
 
-# command line processing
+_normalizeOptions() {
+	# normalize the command line arguments (derived from github users xwmx and e36freak)
+	# arg1 = string of getopt-style flags
+	# arg2 = list of options to normalize (eg $@)
+	# this function normalizes command line options using the string provided
+	# splits -al into "-a -l" unless -a is defined in optstring, then splits to "-a l"
+	# splits -alb into "-a -l -b" unless -a requires an arg and -l is not a flag,
+	# in which case it splits "-alb" into "-a lb"
+	# TODO fancy improvements could include a switch to drop unfamiliar flags
+	# silently, and a switch to error on detection of an undefined flag (strict)
+	# and remove duplicates?
+	# and error if flags requiring options have them?
+	local optstring=${1}; shift
+	echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): optstring=${optstring}"
+	while ((${#})); do
+		echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): ${#} token(s) to process..."
+		echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): reading token ${#}: ${1}"
+		case ${1} in
+			# look for -al -alb etc (multi flags behind a single dash)
+			-[!-]?*)
+				# read from second character on
+				for ((i=1; i < ${#1}; i++)); do
+					char=${1:i:1}
+					remain=${1:i+1}
+					echo "${yellow}DEBUG${reset}: INFO: _normalizeOptions(): flag read: ${char}"
+					# if char is defined in optstring as requiring an argument
+					if [[ $optstring = *"$char:"* ]]; then
+						options+=("-$char")
+						echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): flag -${char} requires an arg"
+						# if 1 char remains and it is defined in optstring
+						if [[ ${#remain} -eq 1 && ${optstring} = *"${1:i+1}"* ]]; then
+							echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): remaining char ${remain} is a flag"
+							#options+=("${remain}")
+							#i=$((i + ${#remain}))
+							# TODO this is problem...we read a flag that requires an
+							# argument...but the next char is defined as a flag...do we throw
+							# an error?
+						# if 1 char remains and it is NOT defined in optstring
+						elif [[ ${#remain} -eq 1 && ${optstring} != *"${1:i+1}"* ]]; then
+							echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): remaining char ${remain} is not a flag"
+							echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): flag -${char} is taking ${remain} as an arg"
+							options+=("${remain}")
+							((i++))
+						# if >1 char remains and next char is not a flag
+						elif [[ ${#remain} -gt 1 && ${optstring} != *"${1:i+1:1}"* ]]; then
+							echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): remainder ${remain} is not 1 char and '${1:i+1:1}' is not a flag"
+							echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): flag -${char} is taking '${remain}' as an arg"
+							options+=("${remain}")
+							i=$((i + ${#remain}))
+						else
+							echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): ${1:i+1:1} is not a flag, adding remainder ${remain} to arg -${char}"
+							options+=("${remain}")
+							i=$((i + ${#remain}))
+						fi
+					# if char is defined in optstring without a need for an arg
+					elif [[ $optstring = *"$char"* ]]; then
+						echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): ${char} is a flag without args"
+						options+=("-$char")
+					else
+						echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): ${char} is not defined in ${optstring}"
+						options+=("-$char")
+					fi
+				done
+				;;
+			--)
+				options+=(--endopts)
+				shift
+				options+=("$@")
+				break
+				;;
+			-?)
+				# any uncombined flag is left in place
+				flag=${1:1}
+				if [[ $optstring = *"${flag}"* ]]; then
+					options+=("$1")
+					echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): added ${1} as a flag"
+				else
+					options+=("$1")
+					echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): added ${1}, an unknown flag"
+					# _strictMode=true...we would check them here too and validate or not
+					# depending on the mode setting
+				fi
+				;;
+			*)
+				# anything else just leave in place
+				options+=("$1")
+				echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): added ${1}, an unknown flag"
+				;;
+		esac
+		shift
+	done
+}
+
+
 _getOpts () {
-	# check for global command flags
-	while getopts ":hvl" flag ; do
-		local OPTIND
+	# check for global command flags and set VARS accordingly
+	_debug "INFO: _getOpts(): positional parameters read: $@"
+	local OPTIND
+	while getopts ":hsdlv" flag ; do
+		#_debug "INFO: OPTIND=$OPTIND flag=$flag"
 		case ${flag} in 
 			h)
-				printInfo ; printUsage; exit 0
+				printInfo ; _printUsage; exit 0
 				;;
- 	    v)
- 	      echo "VERSION: betaitch"; exit 0
+ 	    s)
+ 	      _SILENT=true
+				;;
+			d)
+				_DEBUG=true
 				;;
 			l)
 				_LOG=true
 				;;
+			v)
+				echo "${green}verion${reset}: beta"; exit 0
+				;;
+			?)
+				echo "${red}ERROR${reset}: invalid global option: -$OPTARG"; exit 1
+				;;
 		esac
 	done
-	shift $((OPTIND -1))
+	shift $((OPTIND - 1))
+	# export a paired down parameter string flags and args read within this
+	# function will be discarded, leaving behind only that which the rest needs
+	export _workingParams=$@
 
-	# (sub)command option processing
-	case "${1:-}" in
-		create)
-			# create              create a local gitdisk
-			# usage: create <name> where <name> is a full or relative path to PWD
-			# TODO add --forceNonempty and --forceGitdisk to override
-			#      add --type=hidden to allow dot prefix eg "dot gitdisk" eg .hidden
-			echo "DEBUG: cmd called: $@"
-			echo "DEBUG: _LOG=${_LOG:-}"
-			echo "DEBUG: _forceNonempty=${_forceNonempty:-}"
-			if [ ! -d ~/.gitdisk ]; then
-				echo "${red}ERROR${reset}: run 'gitdisk init' first"
+	_debug "INFO: _LOG=${_LOG}"
+	_debug "INFO: _SILENT=${_SILENT}"
+	_debug "INFO: _DEBUG=${_DEBUG}"
+	return
+}
+
+_getSubcommand() {
+	# look for the first subcommand and set _subCommand accordingly
+	while ((${#})); do
+		_debug "INFO: _getSubcommand(): reading parameter '${1}'"
+		case $1 in
+			create)
+				_debug "INFO: _getSubcommand(): '$1' called, check for create flags"
+				_subCommand=$1
+				_getCreateOpts
+				return
+				;;
+			help)
+				echo "check for command '${2:-}' and print help if it exists"
+				exit 0
+				;;
+			init)
+				_debug "INFO: _getSubcommand(): '$1' called, check for init flags"
+				_subCommand=$1
+				return
+				;;
+			*)
+				_debug "ERROR: _getSubcommand(): $1 is not a subcommand"
 				exit 1
-			fi
-			if [[ -z "${2:-}" ]]; then
-				echo "${red}ERROR${reset}: usage: gitdisk create <name>"
-				echo "       <name> must be a full path or relative to PWD"
-				exit 1
-			else _setDesiredPath "${2}"
-			fi
-			if _isNameValid ${_desiredName}; then
-				echo "${green}OK${reset}: ${_desiredName} is a valid name"
-			else
-				echo "${red}ERROR${reset}: invalid name"
-				exit 1
-			fi
-			if _isPathNew "${_desiredPath}"; then
-				echo "${green}OK${reset}: ${_desiredPath} is new"
-				if _isPathWritable "${_desiredBase}"; then
-					echo "${green}OK${reset}: ${_desiredBase} is writable"
-				else
-					echo "${red}ERROR${reset}: ${_desiredBase} is not writable"
-					exit 1
-				fi
-			else
-				echo "${yellow}WARNING${reset}: ${_desiredPath} already exists"
-				if _isPathEmpty "${_desiredPath}"; then
-					echo "${green}OK${reset}: ${_desiredPath} is empty"
-				else
-					if _isPathGitdisk "${_desiredPath}"; then
-						_signature=$(cat "${_desiredPath}/.git/description")
-						echo "${yellow}WARNING${reset}: ${_desiredPath} is a gitdisk"
-						echo "${yellow}INFO${reset}: ${_signature}"
-						echo "${yellow}TODO${reset}: add force flag to re-initialize gitdisk"
-						echo "${red}ERROR${reset}: could not create due to existing gitdisk"
-						exit 1
-					else
-						echo "${yellow}WARNING${reset}: ${_desiredPath} is not empty"
-						echo "${yellow}TODO${reset}: add force flag to add non-empty dir"
-						echo "${red}ERROR${reset}: could not create due to non-empty path"
-						exit 1
-					fi
-				fi
-			fi
-			echo "${green}OK${reset}: all conditions passed...creating gitdisk"
-			if _createGitdisk "${_desiredPath}"; then
-				echo "${green}OK${reset}: gitdisk created at ${_desiredPath}"
-			else
-				echo "${red}ERROR${reset}: gitdisk failed to create ${_desiredPath}"
-				exit 1
-			fi
-			;;
-		init)
-			# set up ~/.gitdisk and gitdisktab
-			echo "cmd called: $@"
-			echo "_LOG=${_LOG:-}"
-			if [ -d "${_gitdiskConfig}" ]; then
-				echo "${red}ERROR${reset}: gitdisk already installed"
-				exit 1
-			else
-				_createGitdisk "${_gitdiskConfig}"
-				echo "logs/" >> "${_gitdiskConfig}/.gitignore"
-				mkdir "${_gitdiskConfig}/logs"
-				touch "${_gitdiskConfig}/gitdisk.tab"
-			fi	
-			;;	
-		mirror)
-			# mirror              attach a mirror repo
-			echo "cmd called: $@"
-			echo "_LOG=${_LOG:-}"
-			exit 0
-			;;
-		import)
-			# import              import a remote gitdisk
-			echo "cmd called: $@"
-			echo "_LOG=${_LOG:-}"
-			exit 0
-			;;
-		sync)
-			# sync                sync to remote(s)
-			echo "cmd called: $@"
-			echo "_LOG=${_LOG:-}"
-			exit 0
-			;;
-		new)
-			# new                 add a new item to gitdisk
-			echo "cmd called: $@"
-			echo "_LOG=${_LOG:-}"
-			exit 0
-			;;
-		mv)
-			# mv                  move item within gitdisk
-			echo "cmd called: $@"
-			echo "_LOG=${_LOG:-}"
-			exit 0
-			;;
-		rm)
-			# rm                  remove item from gitdisk
-			echo "cmd called: $@"
-			echo "_LOG=${_LOG:-}"
-			exit 0
-			;;
-		open)
-			# open                open item
-			echo "cmd called: $@"
-			echo "_LOG=${_LOG:-}"
-			exit 0
-			;;
-		*)
-			printUsage
+				;;
+		esac
+		shift
+	done
+}	
+
+_getCreateOpts() {
+	# check for create flags and args
+	local OPTIND=1
+	set -- $_workingParams
+	_debug "INFO: _getCreateOpts(): positional parameters read: $@"
+	shift
+	while getopts ":fo:" flag $@ ; do
+		case ${flag} in 
+			f)
+				_forceCreate=true
+				_debug "INFO: _getCreateOpts(): force mode is enabled"
+				;;
+			o)
+				_debug "INFO: _getCreateOpts(): setting option _createObjectHold=$OPTARG"
+				_createObjectHold=$OPTARG
+				#shift
+				;;
+			?)
+				echo "${red}ERROR${reset}: invalid option: -$OPTARG"; exit 1
+				_debug "INFO: _getCreateOpts(): unknown flag: -$OPTARG"; exit 1
+				;;
+		esac
+	done
+	shift $((OPTIND - 1))
+	export _workingParams=$@
+}
+
+_create() {
+	local _desiredPath=$_workingParams
+	if [ ! -d ~/.gitdisk ]; then
+		echo "${red}ERROR${reset}: run 'gitdisk init' first"
+		exit 1
+	fi
+	if [[ -z "${_desiredPath:-}" ]]; then
+		echo "${red}ERROR${reset}: usage: gitdisk create <name>"
+		echo "       <name> must be a full path or relative to PWD"
+		exit 1
+	else _setDesiredPath "${_desiredPath}"
+	fi
+	if _isNameValid ${_desiredName}; then
+		echo "${green}OK${reset}: ${_desiredName} is a valid name"
+	else
+		[ -z "${_verbose:-}" ] || echo "${red}ERROR${reset}: invalid name"
+		_log "create: error: ${_desiredName} is an invalid name"
+		exit 1
+	fi
+	if _isPathNew "${_desiredPath}"; then
+		echo "${green}OK${reset}: ${_desiredPath} is new"
+		if _isPathWritable "${_desiredBase}"; then
+			echo "${green}OK${reset}: ${_desiredBase} is writable"
+		else
+			echo "${red}ERROR${reset}: ${_desiredBase} is not writable"
+			_log "create: error: ${_desiredPath} is not writable"
 			exit 1
-			;;
-	esac
+		fi
+	else
+		echo "${yellow}WARNING${reset}: ${_desiredPath} already exists"
+		if _isPathEmpty "${_desiredPath}"; then
+			echo "${green}OK${reset}: ${_desiredPath} is empty"
+		else
+			if _isPathGitdisk "${_desiredPath}"; then
+				_signature=$(cat "${_desiredPath}/.git/description")
+				echo "${yellow}WARNING${reset}: ${_desiredPath} is a gitdisk"
+				echo "${yellow}INFO${reset}: ${_signature}"
+				echo "${yellow}TODO${reset}: add force flag to re-initialize gitdisk"
+				echo "${red}ERROR${reset}: could not create due to existing gitdisk"
+				exit 1
+			else
+				echo "${yellow}WARNING${reset}: ${_desiredPath} is not empty"
+				echo "${yellow}TODO${reset}: add force flag to add non-empty dir"
+				echo "${red}ERROR${reset}: could not create due to non-empty path"
+				exit 1
+			fi
+		fi
+	fi
+	echo "${green}OK${reset}: all conditions passed...creating gitdisk"
+	if _createGitdisk "${_desiredPath}"; then
+		echo "${green}OK${reset}: gitdisk created at ${_desiredPath}"
+	else
+		echo "${red}ERROR${reset}: gitdisk failed to create ${_desiredPath}"
+		exit 1
+	fi
+}
+
+# mirror              attach a mirror repo
+# import              import a remote gitdisk
+# sync                sync to remote(s)
+# new                 add a new item to gitdisk
+# mv                  move item within gitdisk
+# rm                  remove item from gitdisk
+# open                open item
+
+
+_init() {
+	# set up ~/.gitdisk and gitdisktab
+	if [ -f "${_dotGitdisk}/.installed" ]; then
+		_debug "ERROR: gitdisk already installed"
+		echo "${red}ERROR${reset}: gitdisk already installed"
+		exit 1
+	else
+		_createGitdisk "${_dotGitdisk}"
+		echo "logs/" >> "${_dotGitdisk}/.gitignore"
+		[ ! -d "${_dotGitdisk}/logs" ] && mkdir "${_dotGitdisk}/logs"
+		touch "${_dotGitdisk}/gitdisk.tab"
+		touch "${_dotGitdisk}/.installed"
+		_debug "INFO: ${_dotGitdisk} created...gitdisk ready to use"
+	fi	
+}
+
+_checkSelf() {
+	# check if installed
+	if [ ${_subCommand} = "init" ] && [ ! -d "${_dotGitdisk}" ]; then
+		return 0
+	else [ -d "${_dotGitdisk}" ] && return 0 || return 1
+	fi
 }
 
 main() {
 	_getOpts "${@}"
-	return 0
+	_debug "INFO: main(): origParmas: $@"
+	_debug "INFO: main(): pairedParams: $_workingParams"
+	_getSubcommand $_workingParams
+	_debug "INFO: main(): _subCommand: $_subCommand"
+	_debug "INFO: main(): remaining arg: $_workingParams"
+	_isGitReady
+	_checkSelf || _fatal "ERROR: run 'gitdisk init' first"
+	[ ! -z "${_subCommand:-}" ] && eval _${_subCommand}
 }
 main "${@}"
-
