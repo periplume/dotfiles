@@ -144,7 +144,8 @@ _isNameValid() {
 			_debug "ERROR: _isNameValid(): first char must be letter or digit"
 			return 1
 	# check string length
-	elif [ "${_strLength}" -lt ${_minChar} -o "${_strLength}" -gt ${_maxChar} ]; then
+	#elif [ "${_strLength}" -lt ${_minChar} -o "${_strLength}" -gt ${_maxChar} ]; then
+	elif [ "${_strLength}" -lt ${_minChar} ] || [ "${_strLength}" -gt ${_maxChar} ]; then
 		_debug "ERROR: _isNameValid(): length violation"
 		return 1
 	# check last char...must be lower or number
@@ -222,7 +223,7 @@ _isPathEmpty() {
 		_debug "ERROR: _isPathEmpty requires an argument"
 		return 1
 	elif [ -n "$(ls -A "${1}" 2>/dev/null)" ]; then
-		_debug "ERROR: _isPathEmpty(): ${1} is NOT empty"
+		_debug "WARNING: _isPathEmpty(): ${1} is NOT empty"
 		return 1
 	fi
 }
@@ -235,7 +236,7 @@ _isPathNew() {
 		_debug "ERROR: _isPathNew requires an argument"
 		return 1
 	elif [ -d "${1}" ]; then
-		_debug "ERROR: _isPathNew(): ${1} exists"
+		_debug "WARNING: _isPathNew(): ${1} exists"
 		return 1
 	fi
 }
@@ -361,7 +362,6 @@ _getCreateOpts() {
 			o)
 				_debug "INFO: _getCreateOpts(): setting option _createObjectHold=$OPTARG"
 				_createObjectHold=$OPTARG
-				#shift
 				;;
 			?)
 				echo "${red}ERROR${reset}: invalid option: -$OPTARG"; exit 1
@@ -370,12 +370,11 @@ _getCreateOpts() {
 		esac
 	done
 	shift $((OPTIND - 1))
-	export _workingParams=$@
+	export _workingParams=$*
 }
 
 _create() {
 	local _desiredPath=$_workingParams
-	_debug "${_desiredPath}"
 	if [ ! -d ~/.gitdisk ]; then
 		echo "${red}ERROR${reset}: run 'gitdisk init' first"
 		exit 1
@@ -402,7 +401,6 @@ _create() {
 			exit 1
 		fi
 	else
-		_debug "WARNING: _create(): '${_desiredPath}' already exists"
 		if _isPathEmpty "${_desiredPath}"; then
 			_debug "INFO: _create(): '${_desiredPath}' is empty"
 		else
@@ -434,7 +432,6 @@ _create() {
 # mv                  move item within gitdisk
 # rm                  remove item from gitdisk
 # open                open item
-
 
 _init() {
 	# set up ~/.gitdisk and gitdisktab
