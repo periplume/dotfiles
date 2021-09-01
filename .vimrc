@@ -8,6 +8,9 @@ colorscheme desert
 " turn on visual bell (and audible bell off)
 set vb
 
+" keep the cursor centered in the screen
+set scrolloff=10
+
 " statusline
 set laststatus=2
 " print file name only without path
