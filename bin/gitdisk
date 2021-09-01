@@ -72,19 +72,19 @@ _fatal() {
 _isGitReady() {
 	# check that our version of git supports this (git >= 2.28)
 	if ! hash git; then
-		_debug "ERROR: git is required"
+		_debug "ERROR: _isGitReady(): git is required"
 		exit 1
 	else
 		_gitVersion=$(git --version | cut -d' ' -f3)
-		_debug "INFO: git version is ${_gitVersion}"
+		_debug "INFO: _isGitReady(): git version is ${_gitVersion}"
 		_gitMajor=$(echo ${_gitVersion} | cut -d. -f1)
 		_gitMinor=$(echo ${_gitVersion} | cut -d. -f2)
 		if [ ${_gitMajor} -eq 2 ] && [ ${_gitMinor} -ge 28 ]; then
-			_debug "INFO: git version ${_gitVersion} is >= 2.28"
+			_debug "INFO: _isGitReady(): git version ${_gitVersion} is >= 2.28"
 			return 0
 		else
-			_debug "ERROR: git version ${_gitVersion} is not >= 2.28"
-			_debug "INFO: upgrade git to 2.28 or later to use gitdisk"
+			_debug "ERROR: _isGitReady(): git version ${_gitVersion} is not >= 2.28"
+			_debug "INFO: _isGitReady(): upgrade git to 2.28 or later to use gitdisk"
 			exit 1
 		fi
 	fi
@@ -140,31 +140,31 @@ _isNameValid() {
 	#							no dash follows dot and vice versa
 	local _requestedName="${@}"
 	local _strLength=${#_requestedName}
-	_debug "INFO: _requestedName=${_requestedName}"
-	_debug "INFO: _strLength=${#_requestedName}"
+	_debug "INFO: _isNameValid(): requestedName=${_requestedName}"
+	_debug "INFO: _isNameValid(): strLength=${#_requestedName}"
 	# check first char first...must be lowercase or number	
 	if [[ ! ${_requestedName} =~ ^[[:lower:]|[:digit:]] ]]; then
-			_debug "INVALID: first char must be letter or digit"
+			_debug "ERROR: _isNameValid(): first char must be letter or digit"
 			return 1
 	# check string length
 	elif [ ${_strLength} -lt ${_minChar} -o ${_strLength} -gt ${_maxChar} ]; then
-		_debug "INVALID: length violation"
+		_debug "ERROR: _isNameValid(): length violation"
 		return 1
 	# check last char...must be lower or number
 	elif [[ ! ${_requestedName} =~ [[:lower:]|[:digit:]]$ ]]; then
-			_debug "INVALID: last char must be letter or digit"
+			_debug "ERROR: _isNameValid(): last char must be letter or digit"
 			return 1
 	# check for allowed characters
 	elif [[ ! ${_requestedName} =~ ^([[:lower:]|[:digit:]]|[-.])*$ ]]; then
-			_debug "INVALID: only lower, digit, hyphen and period allowed"
+			_debug "ERROR: _isNameValid(): only lower, digit, hyphen and period allowed"
 			return 1
 	else
 		# check for other conditions we deem illegal
 		case ${_requestedName} in
-			*--* ) _debug "INVALID: double dash"; return 1 ;;
-			*..* ) _debug "INVALID: double dot"; return 1 ;;
-			*.-* ) _debug "INVALID: dash follows dot"; return 1 ;;
-			*-.* ) _debug "INVALID: dot follows dash"; return 1 ;;
+			*--* ) _debug "ERROR: _isNameValid(): double dash"; return 1 ;;
+			*..* ) _debug "ERROR: _isNameValid(): double dot"; return 1 ;;
+			*.-* ) _debug "ERROR: _isNameValid(): dash follows dot"; return 1 ;;
+			*-.* ) _debug "ERROR: _isNameValid(): dot follows dash"; return 1 ;;
 		esac
 	fi
 }
@@ -178,15 +178,15 @@ _setDesiredPath() {
 		return 1
 	else
 			local _workDir="$(pwd)"
-			_debug "INFO: _workDir=${_workDir}"
+			_debug "INFO: _setDesiredPath(): workDir=${_workDir}"
 			# figure out the path; full or relative path allowed
 			if [[ "${1}" = /* ]]; then
 				_desiredPath="${1}"
 				_desiredName=$(basename "${1}")
 			elif [[ "${1}" = ..* ]]; then
-        _debug "ERROR: no path redirects"; exit 1
+        _debug "ERROR: _setDesiredPath(): no path redirects"; exit 1
       elif [[ "${1}" = ./* ]]; then
-        _debug "INFO: fix this into relative path, strip 1st 2 chars"; exit 1
+        _debug "INFO: _setDesiredPath(): fix this into relative path, strip 1st 2 chars"; exit 1
 				# TODO fix this in case path is explicitly relative
       elif [[ "${1}" = . ]]; then
 				_desiredPath="${_workDir}"
@@ -196,9 +196,9 @@ _setDesiredPath() {
 				_desiredName=${1}
 			fi
 			_desiredBase=$(dirname "${_desiredPath}")
-			_debug "INFO: desired path is '${_desiredPath}'"
-			_debug "INFO: desired name is '${_desiredName}'"
-			_debug "INFO: desired base is '${_desiredBase}'"
+			_debug "INFO: _setDesiredPath(): desired path is '${_desiredPath}'"
+			_debug "INFO: _setDesiredPath(): desired name is '${_desiredName}'"
+			_debug "INFO: _setDesiredPath(): desired base is '${_desiredBase}'"
 			# TODO make sure to always strip off trailing slash
 	fi
 }
@@ -269,109 +269,15 @@ _createGitdisk() {
 		_debug "ERROR: _createGitdisk requires an argument"
 		return 1
 	else
-		git init -q -b "${_initialBranch}" "${1}" || _log "create failed: err?"
+		git init -q -b "${_initialBranch}" "${1}" || _log "ERROR: _createGitdisk(): create failed: err?: $?"
 		echo "${_gitdiskSignature}" > "${1}/.git/description"
 		# this will become a gitdisk.tab file (a la fstab)
 		# fields
 		# uuid path user hostname timestamp
 		echo "${_uuidMark} ${1} $USER $HOSTNAME ${_timestampUnix}" >> ~/.gitdisk/gitdisk.tab
-		_log "created ${_uuidMark} at ${1} by $USER on $HOSTNAME"
+		_log "INFO: _createGitdisk(): created ${_uuidMark} at ${1} by $USER on $HOSTNAME"
 	fi
 }
-
-_normalizeOptions() {
-	# normalize the command line arguments (derived from github users xwmx and e36freak)
-	# arg1 = string of getopt-style flags
-	# arg2 = list of options to normalize (eg $@)
-	# this function normalizes command line options using the string provided
-	# splits -al into "-a -l" unless -a is defined in optstring, then splits to "-a l"
-	# splits -alb into "-a -l -b" unless -a requires an arg and -l is not a flag,
-	# in which case it splits "-alb" into "-a lb"
-	# TODO fancy improvements could include a switch to drop unfamiliar flags
-	# silently, and a switch to error on detection of an undefined flag (strict)
-	# and remove duplicates?
-	# and error if flags requiring options have them?
-	local optstring=${1}; shift
-	echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): optstring=${optstring}"
-	while ((${#})); do
-		echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): ${#} token(s) to process..."
-		echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): reading token ${#}: ${1}"
-		case ${1} in
-			# look for -al -alb etc (multi flags behind a single dash)
-			-[!-]?*)
-				# read from second character on
-				for ((i=1; i < ${#1}; i++)); do
-					char=${1:i:1}
-					remain=${1:i+1}
-					echo "${yellow}DEBUG${reset}: INFO: _normalizeOptions(): flag read: ${char}"
-					# if char is defined in optstring as requiring an argument
-					if [[ $optstring = *"$char:"* ]]; then
-						options+=("-$char")
-						echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): flag -${char} requires an arg"
-						# if 1 char remains and it is defined in optstring
-						if [[ ${#remain} -eq 1 && ${optstring} = *"${1:i+1}"* ]]; then
-							echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): remaining char ${remain} is a flag"
-							#options+=("${remain}")
-							#i=$((i + ${#remain}))
-							# TODO this is problem...we read a flag that requires an
-							# argument...but the next char is defined as a flag...do we throw
-							# an error?
-						# if 1 char remains and it is NOT defined in optstring
-						elif [[ ${#remain} -eq 1 && ${optstring} != *"${1:i+1}"* ]]; then
-							echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): remaining char ${remain} is not a flag"
-							echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): flag -${char} is taking ${remain} as an arg"
-							options+=("${remain}")
-							((i++))
-						# if >1 char remains and next char is not a flag
-						elif [[ ${#remain} -gt 1 && ${optstring} != *"${1:i+1:1}"* ]]; then
-							echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): remainder ${remain} is not 1 char and '${1:i+1:1}' is not a flag"
-							echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): flag -${char} is taking '${remain}' as an arg"
-							options+=("${remain}")
-							i=$((i + ${#remain}))
-						else
-							echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): ${1:i+1:1} is not a flag, adding remainder ${remain} to arg -${char}"
-							options+=("${remain}")
-							i=$((i + ${#remain}))
-						fi
-					# if char is defined in optstring without a need for an arg
-					elif [[ $optstring = *"$char"* ]]; then
-						echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): ${char} is a flag without args"
-						options+=("-$char")
-					else
-						echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): ${char} is not defined in ${optstring}"
-						options+=("-$char")
-					fi
-				done
-				;;
-			--)
-				options+=(--endopts)
-				shift
-				options+=("$@")
-				break
-				;;
-			-?)
-				# any uncombined flag is left in place
-				flag=${1:1}
-				if [[ $optstring = *"${flag}"* ]]; then
-					options+=("$1")
-					echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): added ${1} as a flag"
-				else
-					options+=("$1")
-					echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): added ${1}, an unknown flag"
-					# _strictMode=true...we would check them here too and validate or not
-					# depending on the mode setting
-				fi
-				;;
-			*)
-				# anything else just leave in place
-				options+=("$1")
-				echo "${cyan}DEBUG${reset}: INFO: _normalizeOptions(): added ${1}, an unknown flag"
-				;;
-		esac
-		shift
-	done
-}
-
 
 _getOpts () {
 	# check for global command flags and set VARS accordingly
@@ -480,46 +386,42 @@ _create() {
 	else _setDesiredPath "${_desiredPath}"
 	fi
 	if _isNameValid ${_desiredName}; then
-		echo "${green}OK${reset}: ${_desiredName} is a valid name"
+		_debug "INFO: _create(): '${_desiredName}' is a valid name"
 	else
 		[ -z "${_verbose:-}" ] || echo "${red}ERROR${reset}: invalid name"
-		_log "create: error: ${_desiredName} is an invalid name"
+		_debug "ERROR: _create(): '${_desiredName}' is an invalid name"
 		exit 1
 	fi
 	if _isPathNew "${_desiredPath}"; then
-		echo "${green}OK${reset}: ${_desiredPath} is new"
+		_debug "INFO: _create(): '${_desiredPath}' is new"
 		if _isPathWritable "${_desiredBase}"; then
-			echo "${green}OK${reset}: ${_desiredBase} is writable"
+			_debug "INFO: _create(): '${_desiredPath}' is writable"
 		else
-			echo "${red}ERROR${reset}: ${_desiredBase} is not writable"
-			_log "create: error: ${_desiredPath} is not writable"
+			_debug "ERROR: _create(): '${_desiredBase}' is not writable"
 			exit 1
 		fi
 	else
-		echo "${yellow}WARNING${reset}: ${_desiredPath} already exists"
+		_debug "WARNING: _create(): '${_desiredPath}' already exists"
 		if _isPathEmpty "${_desiredPath}"; then
-			echo "${green}OK${reset}: ${_desiredPath} is empty"
+			_debug "INFO: _create(): '${_desiredPath}' is empty"
 		else
 			if _isPathGitdisk "${_desiredPath}"; then
 				_signature=$(cat "${_desiredPath}/.git/description")
-				echo "${yellow}WARNING${reset}: ${_desiredPath} is a gitdisk"
-				echo "${yellow}INFO${reset}: ${_signature}"
-				echo "${yellow}TODO${reset}: add force flag to re-initialize gitdisk"
+				_debug "WARNING: _create(): '${_desiredPath}' is a gitdisk: ${_signature}"
 				echo "${red}ERROR${reset}: could not create due to existing gitdisk"
 				exit 1
 			else
-				echo "${yellow}WARNING${reset}: ${_desiredPath} is not empty"
-				echo "${yellow}TODO${reset}: add force flag to add non-empty dir"
+				_debug "WARNING: _create(): '${_desiredPath}' is not empty and is not a gitdisk"
 				echo "${red}ERROR${reset}: could not create due to non-empty path"
 				exit 1
 			fi
 		fi
 	fi
-	echo "${green}OK${reset}: all conditions passed...creating gitdisk"
+	_debug "INFO: _create(): all conditions passed...creating gitdisk..."
 	if _createGitdisk "${_desiredPath}"; then
-		echo "${green}OK${reset}: gitdisk created at ${_desiredPath}"
+		_debug "INFO: _create(): gitdisk created at ${_desiredPath}"
 	else
-		echo "${red}ERROR${reset}: gitdisk failed to create ${_desiredPath}"
+		_debug "ERROR: _create(): gitdisk failed to create ${_desiredPath}"
 		exit 1
 	fi
 }
@@ -559,13 +461,13 @@ _checkSelf() {
 
 main() {
 	_getOpts "${@}"
-	_debug "INFO: main(): origParmas: $@"
-	_debug "INFO: main(): pairedParams: $_workingParams"
+	_debug "INFO: _main(): origParmas: $@"
+	_debug "INFO: _main(): pairedParams: $_workingParams"
 	_getSubcommand $_workingParams
-	_debug "INFO: main(): _subCommand: $_subCommand"
-	_debug "INFO: main(): remaining arg: $_workingParams"
+	_debug "INFO: _main(): _subCommand: $_subCommand"
+	_debug "INFO: _main(): remaining arg: $_workingParams"
 	_isGitReady
-	_checkSelf || _fatal "ERROR: run 'gitdisk init' first"
+	_checkSelf || _fatal "ERROR: no .gitdisk dir; run 'gitdisk init' first"
 	[ ! -z "${_subCommand:-}" ] && eval _${_subCommand}
 }
 main "${@}"
