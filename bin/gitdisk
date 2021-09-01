@@ -16,14 +16,10 @@ _DEBUG=false
 _SILENT=false
 # logging facility
 _LOG=true
-#if [ ! -d "${_dotGitdisk:-}" ]; then
-#	_LOG=false
-#fi
 
 # some color
 red=$(tput setaf 1)
 green=$(tput setaf 2)
-yellow=$(tput setaf 3)
 cyan=$(tput setaf 6)
 reset=$(tput sgr0)
 
@@ -43,21 +39,22 @@ _logFile="${_dotGitdisk}/logs/gitdisk.log"
 _log() {
 	# write logs to persistent logfile
 	# FORMAT: timestamp [USER|INFO|DEBUG] "message"
-	local _timeStamp=$(date +%s)
-	local _logMessage="${@:-}"
+	local _timeStamp
+	_timeStamp=$(date +%s)
+	local _logMessage="${*:-}"
 	[ ${_LOG} = false ] && return
-	[ -f ${_logFile} ] || mkdir -p "${_dotGitdisk}/logs" && touch ${_logFile}
-	printf "${_timeStamp} ${_logMessage}\n" >> "${_logFile}"
+	[ -f "${_logFile}" ] || mkdir -p "${_dotGitdisk}/logs" && touch "${_logFile}"
+	printf "%s %s\n" "${_timeStamp}" "${_logMessage}" >> "${_logFile}"
 }
 
 _debug() {
 	# write debug info to stdout and/or log
-	local _debugMessage="${@:-}"
+	local _debugMessage="${*:-}"
 	# if debug is not enabled, ignore and return
 	[ ${_DEBUG} = false ] && return
 	# if debug is true and _SILENT is not true, print debug to terminal
 	if [ ${_DEBUG} = true ] && [ ! ${_SILENT} = true ]; then
-		printf "${cyan}DEBUG${reset}: ${_debugMessage}\n"
+		echo "${cyan}DEBUG${reset}: ${_debugMessage}"
 	fi
 	# send to log facility
 	_log DEBUG "${_debugMessage}"
@@ -65,7 +62,7 @@ _debug() {
 
 # die verbally
 _fatal() {
-	echo "FATAL: $@"
+	echo "FATAL: $*"
 	exit 1
 }
 
@@ -77,9 +74,9 @@ _isGitReady() {
 	else
 		_gitVersion=$(git --version | cut -d' ' -f3)
 		_debug "INFO: _isGitReady(): git version is ${_gitVersion}"
-		_gitMajor=$(echo ${_gitVersion} | cut -d. -f1)
-		_gitMinor=$(echo ${_gitVersion} | cut -d. -f2)
-		if [ ${_gitMajor} -eq 2 ] && [ ${_gitMinor} -ge 28 ]; then
+		_gitMajor=$(echo "${_gitVersion}" | cut -d. -f1)
+		_gitMinor=$(echo "${_gitVersion}" | cut -d. -f2)
+		if [ "${_gitMajor}" -eq 2 ] && [ "${_gitMinor}" -ge 28 ]; then
 			_debug "INFO: _isGitReady(): git version ${_gitVersion} is >= 2.28"
 			return 0
 		else
@@ -138,7 +135,7 @@ _isNameValid() {
 	#             first and last not - or .
 	#							no double dash or dot
 	#							no dash follows dot and vice versa
-	local _requestedName="${@}"
+	local _requestedName="${*}"
 	local _strLength=${#_requestedName}
 	_debug "INFO: _isNameValid(): requestedName=${_requestedName}"
 	_debug "INFO: _isNameValid(): strLength=${#_requestedName}"
@@ -147,7 +144,7 @@ _isNameValid() {
 			_debug "ERROR: _isNameValid(): first char must be letter or digit"
 			return 1
 	# check string length
-	elif [ ${_strLength} -lt ${_minChar} -o ${_strLength} -gt ${_maxChar} ]; then
+	elif [ "${_strLength}" -lt ${_minChar} -o "${_strLength}" -gt ${_maxChar} ]; then
 		_debug "ERROR: _isNameValid(): length violation"
 		return 1
 	# check last char...must be lower or number
@@ -177,7 +174,8 @@ _setDesiredPath() {
 		_debug "ERROR: _setDesiredPath requires an argument"
 		return 1
 	else
-			local _workDir="$(pwd)"
+			local _workDir
+			_workDir="$(pwd)"
 			_debug "INFO: _setDesiredPath(): workDir=${_workDir}"
 			# figure out the path; full or relative path allowed
 			if [[ "${1}" = /* ]]; then
@@ -223,8 +221,8 @@ _isPathEmpty() {
 	if [ -z "${1}" ]; then
 		_debug "ERROR: _isPathEmpty requires an argument"
 		return 1
-	elif [ ! -z "$(ls -A ${1} 2>/dev/null)" ]; then
-		_debug "ERROR: $?: ${1} is NOT empty"
+	elif [ -n "$(ls -A "${1}" 2>/dev/null)" ]; then
+		_debug "ERROR: _isPathEmpty(): ${1} is NOT empty"
 		return 1
 	fi
 }
@@ -237,7 +235,7 @@ _isPathNew() {
 		_debug "ERROR: _isPathNew requires an argument"
 		return 1
 	elif [ -d "${1}" ]; then
-		_debug "ERROR: ${1} exists"
+		_debug "ERROR: _isPathNew(): ${1} exists"
 		return 1
 	fi
 }
@@ -262,8 +260,10 @@ _isPathGitdisk() {
 _createGitdisk() {
 	# arg 1 = full path
 	# return 0 on success, 1 on fail
-	local _uuidMark=$(uuidgen | tr "[:upper:]" "[:lower:]")
-	local _timestampUnix=$(date +%s)
+	local _uuidMark
+	local _timestampUnix
+	_uuidMark=$(uuidgen | tr "[:upper:]" "[:lower:]")
+	_timestampUnix=$(date +%s)
 	local _gitdiskSignature="gitdisk: $USER $HOSTNAME ${_timestampUnix} ${_uuidMark}"
 	if [ -z "${1}" ]; then
 		_debug "ERROR: _createGitdisk requires an argument"
@@ -281,7 +281,7 @@ _createGitdisk() {
 
 _getOpts () {
 	# check for global command flags and set VARS accordingly
-	_debug "INFO: _getOpts(): positional parameters read: $@"
+	_debug "INFO: _getOpts(): positional parameters read: $*"
 	local OPTIND
 	while getopts ":hsdlv" flag ; do
 		#_debug "INFO: OPTIND=$OPTIND flag=$flag"
@@ -309,7 +309,7 @@ _getOpts () {
 	shift $((OPTIND - 1))
 	# export a paired down parameter string flags and args read within this
 	# function will be discarded, leaving behind only that which the rest needs
-	export _workingParams=$@
+	export _workingParams=$*
 
 	_debug "INFO: _LOG=${_LOG}"
 	_debug "INFO: _SILENT=${_SILENT}"
@@ -349,10 +349,10 @@ _getSubcommand() {
 _getCreateOpts() {
 	# check for create flags and args
 	local OPTIND=1
-	set -- $_workingParams
-	_debug "INFO: _getCreateOpts(): positional parameters read: $@"
+	set -- ${_workingParams}
+	_debug "INFO: _getCreateOpts(): positional parameters read: $*"
 	shift
-	while getopts ":fo:" flag $@ ; do
+	while getopts ":fo:" flag "$@" ; do
 		case ${flag} in 
 			f)
 				_forceCreate=true
@@ -375,6 +375,7 @@ _getCreateOpts() {
 
 _create() {
 	local _desiredPath=$_workingParams
+	_debug "${_desiredPath}"
 	if [ ! -d ~/.gitdisk ]; then
 		echo "${red}ERROR${reset}: run 'gitdisk init' first"
 		exit 1
@@ -385,7 +386,7 @@ _create() {
 		exit 1
 	else _setDesiredPath "${_desiredPath}"
 	fi
-	if _isNameValid ${_desiredName}; then
+	if _isNameValid "${_desiredName}"; then
 		_debug "INFO: _create(): '${_desiredName}' is a valid name"
 	else
 		[ -z "${_verbose:-}" ] || echo "${red}ERROR${reset}: invalid name"
@@ -453,7 +454,7 @@ _init() {
 
 _checkSelf() {
 	# check if installed
-	if [ ${_subCommand} = "init" ] && [ ! -d "${_dotGitdisk}" ]; then
+	if [ "${_subCommand}" = "init" ] && [ ! -d "${_dotGitdisk}" ]; then
 		return 0
 	else [ -d "${_dotGitdisk}" ] && return 0 || return 1
 	fi
@@ -461,13 +462,13 @@ _checkSelf() {
 
 main() {
 	_getOpts "${@}"
-	_debug "INFO: _main(): origParmas: $@"
+	_debug "INFO: _main(): origParams: $*"
 	_debug "INFO: _main(): pairedParams: $_workingParams"
 	_getSubcommand $_workingParams
 	_debug "INFO: _main(): _subCommand: $_subCommand"
 	_debug "INFO: _main(): remaining arg: $_workingParams"
 	_isGitReady
 	_checkSelf || _fatal "ERROR: no .gitdisk dir; run 'gitdisk init' first"
-	[ ! -z "${_subCommand:-}" ] && eval _${_subCommand}
+	[ -n "${_subCommand:-}" ] && eval _"${_subCommand}"
 }
 main "${@}"
