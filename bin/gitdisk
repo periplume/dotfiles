@@ -3,18 +3,34 @@
 # source: https://github.com/periplume/dotfiles.git
 # author: jason@bloom.us
 
+# TO MY FUTURE SELF
+# WHOSE MEMORY WILL STRUGGLE TO REMEMBER HOW THIS THING WORKS
+# TOC MORE OR LESS:
+# SCRIPT AND SHELL SETTINGS
+# ENVIRONMENT SETTINGS
+# DEFAULTS
+# BASIC LOGGING FUNCTIONS
+# HELPER FUNCTIONS
+# PARAMETER PROCESSING FUNCTIONS
+# SUBCOMMAND FUNCTIONS AND SUBFUNCTIONS
+# MAIN ENTRY AND CONTROL
+
+# SCRIPT AND SHELL SETTINGS
+
 # bash strict settings
 set -o errexit
 set -o nounset
 set -o pipefail
+#set -x
+
+# ENVIRONMENT SETTINGS
 
 # debugging and logging settings
-#set -x
-# script debug toggle (set to true to enable global debugging)
-_DEBUG=false
+# script debug toggle (set to true to enable default global debugging)
+_DEBUG=true
 # silent mode for scripting (supresses stdout/stderr)
 _SILENT=false
-# logging facility
+# logging facility (debug always goes here, unless)
 _LOG=true
 
 # some color
@@ -22,6 +38,8 @@ red=$(tput setaf 1)
 green=$(tput setaf 2)
 cyan=$(tput setaf 6)
 reset=$(tput sgr0)
+
+# DEFAULTS
 
 # use "main" as the initial and main branch instead of deprecated indelicate "master"
 _initialBranch="main"
@@ -35,7 +53,8 @@ _gitdiskConfig=.gitdisk
 _dotGitdisk="$(dirname ~/.)/${_gitdiskConfig}"
 _logFile="${_dotGitdisk}/logs/gitdisk.log"
 
-# logging and debug functions
+# BASIC LOGGING FUNCTIONS
+
 _log() {
 	# write logs to persistent logfile
 	# FORMAT: timestamp [USER|INFO|DEBUG] "message"
@@ -45,6 +64,22 @@ _log() {
 	[ ${_LOG} = false ] && return
 	[ -f "${_logFile}" ] || mkdir -p "${_dotGitdisk}/logs" && touch "${_logFile}"
 	printf "%s %s\n" "${_timeStamp}" "${_logMessage}" >> "${_logFile}"
+}
+
+_combined() {
+	# write debug info to stdout and/or log
+	# $1 = log level (0-4); everything else is the log message
+	local _logLevel="${1:0}"; shift
+	local _logMessage="${*:-}"
+	local _timeStamp
+	_timeStamp=$(date +%s)
+	# if _DEBUG is true and _SILENT is not true, print debug to terminal
+	if [ ${_DEBUG} = true ] && [ ! ${_SILENT} = true ]; then
+		echo "${cyan}DEBUG${reset}: ${_debugMessage}"
+	fi
+	# send to log facility
+	# write logs to persistent logfile
+	# FORMAT: timestamp [USER|INFO|DEBUG] "message"
 }
 
 _debug() {
@@ -59,6 +94,8 @@ _debug() {
 	# send to log facility
 	_log DEBUG "${_debugMessage}"
 }
+
+# HELPER FUNCTIONS
 
 # die verbally
 _fatal() {
@@ -108,12 +145,12 @@ commands:
  get                 retrieve an object
 
 for command specific usage, eg:
-$ gitdisk create help
+$ gitdisk help create 
 
 EOF
 }
 
-printInfo () {
+_printInfo () {
   cat << EOF
 
 gitdisk treats a git repo like a disk database.  it is meant
@@ -144,7 +181,6 @@ _isNameValid() {
 			_debug "ERROR: _isNameValid(): first char must be letter or digit"
 			return 1
 	# check string length
-	#elif [ "${_strLength}" -lt ${_minChar} -o "${_strLength}" -gt ${_maxChar} ]; then
 	elif [ "${_strLength}" -lt ${_minChar} ] || [ "${_strLength}" -gt ${_maxChar} ]; then
 		_debug "ERROR: _isNameValid(): length violation"
 		return 1
@@ -167,7 +203,6 @@ _isNameValid() {
 	fi
 }
 
-# _setDesiredPath: take path arg and set name and path variables
 _setDesiredPath() {
 	# read $1
 	# set _desiredPath and _desiredName and _desiredBase
@@ -202,7 +237,6 @@ _setDesiredPath() {
 	fi
 }
 
-# _isPathWritable: take path arg and determine if we can write
 _isPathWritable() {
 	# arg 1 = full path
 	# return 0 (yes) if writable, 1 (no) if not writable
@@ -215,7 +249,6 @@ _isPathWritable() {
 	fi	
 }
 
-# _isPathEmpty: return 0 if path contains no files
 _isPathEmpty() {
 	# arg 1 = full path
 	# return 0 if empty, return 1 if not empty
@@ -228,7 +261,6 @@ _isPathEmpty() {
 	fi
 }
 
-# _isPathNew: check if path already exists or not
 _isPathNew() {
 	# arg 1 = full path
 	# return 0 if new; return 1 if exists 
@@ -241,7 +273,6 @@ _isPathNew() {
 	fi
 }
 
-# _isPathGitdisk: check for existence of gitdisk
 _isPathGitdisk() {
 	# arg 1 = full path
 	# return 0 if gitdisk, return 1 if not
@@ -263,6 +294,12 @@ _createGitdisk() {
 	# return 0 on success, 1 on fail
 	local _uuidMark
 	local _timestampUnix
+	# TDOD IMPROVE ON THE _log and _debug
+	local _debug=${_debug:false}
+	# set that as conditional...global _debug turns it on, or global off, it can
+	# be enabled by hand by changing that one setting
+	# then combine _debug and _log into one...using the local approach here to
+	# pinpoint the area of development, finer grain control, as they say
 	_uuidMark=$(uuidgen | tr "[:upper:]" "[:lower:]")
 	_timestampUnix=$(date +%s)
 	local _gitdiskSignature="gitdisk: $USER $HOSTNAME ${_timestampUnix} ${_uuidMark}"
@@ -280,6 +317,8 @@ _createGitdisk() {
 	fi
 }
 
+# PARAMETER PROCESSING FUNCTIONS
+
 _getOpts () {
 	# check for global command flags and set VARS accordingly
 	_debug "INFO: _getOpts(): positional parameters read: $*"
@@ -288,7 +327,7 @@ _getOpts () {
 		#_debug "INFO: OPTIND=$OPTIND flag=$flag"
 		case ${flag} in 
 			h)
-				printInfo ; _printUsage; exit 0
+				_printInfo ; _printUsage; exit 0
 				;;
  	    s)
  	      _SILENT=true
@@ -311,7 +350,6 @@ _getOpts () {
 	# export a paired down parameter string flags and args read within this
 	# function will be discarded, leaving behind only that which the rest needs
 	export _workingParams=$*
-
 	_debug "INFO: _LOG=${_LOG}"
 	_debug "INFO: _SILENT=${_SILENT}"
 	_debug "INFO: _DEBUG=${_DEBUG}"
@@ -320,6 +358,7 @@ _getOpts () {
 
 _getSubcommand() {
 	# look for the first subcommand and set _subCommand accordingly
+	[ -z "${1:-}" ] && echo "${red}ERROR${reset}: subcommand expected"
 	while ((${#})); do
 		_debug "INFO: _getSubcommand(): reading parameter '${1}'"
 		case $1 in
@@ -327,25 +366,34 @@ _getSubcommand() {
 				_debug "INFO: _getSubcommand(): '$1' called, check for create flags"
 				_subCommand=$1
 				_getCreateOpts
+				# ^^ MOVE THIS to the area with the function 
 				return
 				;;
 			help)
-				echo "check for command '${2:-}' and print help if it exists"
-				exit 0
+				_printInfo ; _printUsage; exit 0
 				;;
 			init)
 				_debug "INFO: _getSubcommand(): '$1' called, check for init flags"
 				_subCommand=$1
 				return
 				;;
+			mirror)
+				_debug "INFO: _getSubcommand(): '$1' called, check for mirror flags"
+				_getMirrorOpts
+				_subCommand=$1
+				return
+				;;
 			*)
 				_debug "ERROR: _getSubcommand(): $1 is not a subcommand"
+				echo "${red}ERROR${reset}: $1 is not a valid command"
 				exit 1
 				;;
 		esac
 		shift
 	done
 }	
+
+# SUBCOMMAND FUNCTIONS AND SUBFUNCTIONS
 
 _getCreateOpts() {
 	# check for create flags and args
@@ -364,8 +412,8 @@ _getCreateOpts() {
 				_createObjectHold=$OPTARG
 				;;
 			?)
-				echo "${red}ERROR${reset}: invalid option: -$OPTARG"; exit 1
-				_debug "INFO: _getCreateOpts(): unknown flag: -$OPTARG"; exit 1
+				echo "${red}ERROR${reset}: invalid option: -$OPTARG"
+				_debug "ERROR: _getCreateOpts(): unknown flag: -$OPTARG"; exit 1
 				;;
 		esac
 	done
@@ -425,13 +473,59 @@ _create() {
 	fi
 }
 
+_getMirrorOpts() {
+	local OPTIND=1
+	set -- ${_workingParams}
+	_debug "INFO: _getMirrorOpts(): positional parameters read: $*"
+	shift
+	while getopts ":il" flag "$@"; do
+		case ${flag} in
+			i)
+				_interactiveMode=true
+				_debug "INFO: _getMirrorOpts(): interactive mode enabled"
+				;;
+			l)
+				_mirrorOp=list
+				_debug "INFO: _getMirrorOpts(): mirror operation 'list' set"
+				echo "list the mirrors for given gitdisk (or pwd)"
+				;;
+			?)
+				_debug "ERROR: _getMirrorOpts(): unknown flag -$OPTARG"
+				echo "${red}ERROR${reset}: invalid option to subcommand 'mirror': -$OPTARG"
+				exit 1
+				;;
+		esac
+		done
+		shift $((OPTIND - 1))
+		export _workingParams=$*
+}
 # mirror              attach a mirror repo
+# -i interactive
+# -p pause [DESTINATION]
+# -d detatch [DESTINATION]
+# -a attach [SOURCE] [DESTINATION]
+# -l list
+# -m mode [sync|async|adapt|manual]
+# -t test [gitdisk]
+# -s status [gitdisk]
+_mirror() {
+	# gitdisk mirror SOURCE DESTINATION
+	local _source
+	local _remote
+	IFS=' '; read -ra ARGS <<< $_workingParams
+	_source="${ARGS[0]}"
+	_remote="${ARGS[1]}"
+	echo "source: $_source"
+	echo "remote: $_remote"
+}
+
 # import              import a remote gitdisk
 # sync                sync to remote(s)
-# new                 add a new item to gitdisk
+# put                 add a new item to gitdisk
 # mv                  move item within gitdisk
 # rm                  remove item from gitdisk
 # open                open item
+# map                 add namespace mapping
 
 _init() {
 	# set up ~/.gitdisk and gitdisktab
@@ -456,6 +550,8 @@ _checkSelf() {
 	else [ -d "${_dotGitdisk}" ] && return 0 || return 1
 	fi
 }
+
+# MAIN ENTRY AND CONTROL
 
 main() {
 	_getOpts "${@}"
