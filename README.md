@@ -16,4 +16,4 @@ the installer can be used on a new setup like so:
 # /bin/bash -c "$(curl)"
 ```
 
-
+none of the above is true...still need to fix this file :)
