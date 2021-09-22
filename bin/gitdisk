@@ -17,7 +17,7 @@
 
 # SCRIPT AND SHELL SETTINGS
 
-# bash strict settings
+# bash makin-it-hard settings
 set -o errexit
 set -o nounset
 set -o pipefail
@@ -27,7 +27,7 @@ set -o pipefail
 
 # debugging and logging settings
 # script debug toggle (set to true to enable default global debugging)
-_DEBUG=true
+_DEBUG=false
 # silent mode for scripting (supresses stdout/stderr)
 _SILENT=false
 # logging facility (debug always goes here, unless)
@@ -35,8 +35,10 @@ _LOG=true
 
 # some color
 red=$(tput setaf 1)
+boldred=$(tput bold; tput setaf 1)
 green=$(tput setaf 2)
 cyan=$(tput setaf 6)
+yellow=$(tput setaf 3)
 reset=$(tput sgr0)
 
 # DEFAULTS
@@ -53,79 +55,72 @@ _gitdiskConfig=.gitdisk
 _dotGitdisk="$(dirname ~/.)/${_gitdiskConfig}"
 _logFile="${_dotGitdisk}/logs/gitdisk.log"
 
-# BASIC LOGGING FUNCTIONS
+# LOGGING 
 
 _log() {
 	# levels
-	# 0 debug
-	# 1 info
-	# 2 warn
-	# 3 fatal
-	# ARG1 = log level assigned by caller (can be overridden by setting
-	# _logLevelOverride)
-	# eg: _log 0 "func(): value x was found and changed into x2"
-	# eg: _log 1 "main(): set parameters to x y and z"
-	# eg: _log 2 "func(): doing y because the force flag was set"
-	# eg: _log 3 "main(): unexpected failure, expected x, got y" 
+	# 0=debug eg: _log 0 "func(): value x was found and changed into x2"
+	# 1=info eg: _log 1 "main(): set parameters to x y and z"
+	# 2=warn eg: _log 2 "func(): doing y because the force flag was set"
+	# 3=error eg: _log 3 "main(): error, will continue trying"
+	# 4=fatal eg: _log 4 "main(): fatal error, quitting"
+	# ARG1 = log level (can be overridden by setting _logLevelOverride)
 	# prints 1-3 no matter what, unless _LOG is false and/or _SILENT is true
+	# set to 0 to force all logs into DEBUG pipe
 	local _logLevelOverride=
-	local _logLevel=${_logOverRide:-$1}
+	local _logLevel=${_logLevelOverride:-$1}
 	local _logMessage="${@:2}"
-	# set timestamp for log message (currently using unix seconds only)
+	local _canLog=false
+	# set timestamp for log message (unix seconds)
 	local _timeStamp
 	_timeStamp=$(date +%s)
-	# define log levels
-	local _i[0]="DEBUG"
-	local _i[1]="INFO"
-	local _i[2]="WARN"
-	local _i[3]="FATAL"
+	# define log levels and colors
+	declare -A _i=([0]=DEBUG [1]=INFO [2]=WARN [3]=ERROR [4]=FATAL)
+	declare -A _c=([0]=cyan [1]=green [2]=yellow [3]=red [4]=boldred)
 	local _level=${_i[${_logLevel}]}
+	local _color=${_c[${_logLevel}]}
+	# TODO define the log colors accordingly and shorten the below 
 	# check if a logfile exists
 	[ -f "${_logFile}" ] && _canLog=true
-	# if debug is false and message level is 0, return
+	# if debug is false and message level is 0, stop
 	[  ${_DEBUG} = false ] && [ ${_logLevel} = 0 ] && return
-	# if debug is true, proceed (filter out debug messages first)
 	# if _LOG is true and _logFile exists, print to log
 	[ ${_LOG} = true ] && [ ${_canLog} = true ] && \
 		 printf "%s\n" "${_timeStamp} ${_level}: ${_logMessage}" >> "${_logFile}"
-	# if silent is true, don't print anything to the console
+	# if silent is true, don't print anything to the console and stop
 	[ ${_SILENT} = true ] && return
 	# if _SILENT is false, prettyPrint to console based on level
-	[ ${_DEBUG} = true ] && [ ${_logLevel} = 0 ]  && \
-		echo "${cyan}DEBUG${reset}: ${_logMessage}" && return
-	[ ${_logLevel} = 1 ] && \
-		echo "${green}INFO{$reset}: ${_logMessage}" && return
-	[ ${_logLevel} = 2 ] && \
-		echo "${yellow}WARN{$reset}: ${_logMessage}"&& return
-	[ ${_logLevel} = 3 ] && \
-		echo "${red}FATAL{$reset}: ${_logMessage}" 
+	if [ ! ${_SILENT} = true ]; then
+		[ ${_DEBUG} = true ] && [ ${_logLevel} = 0 ]  && \
+			echo "${cyan}DEBUG${reset}: ${_logMessage}" && return
+		[ ${_logLevel} = 1 ] && \
+			echo "${green}INFO${reset}: ${_logMessage}" && return
+		[ ${_logLevel} = 2 ] && \
+			echo "${yellow}WARN${reset}: ${_logMessage}" && return
+		[ ${_logLevel} = 3 ] && \
+			echo "${red}ERROR${reset}: ${_logMessage}" && return
+		[ ${_logLevel} = 4 ] && \
+			echo "${boldred}FATAL${reset}: ${_logMessage}" && exit 1
+	fi
 }
 
 # HELPER FUNCTIONS
 
-# die verbally and override all log settings...fatal error...doesnt matter
-_fatal() {
-	echo "FATAL: $*"
-	exit 1
-}
-
 _isGitReady() {
 	# check that our version of git supports this (git >= 2.28)
 	if ! hash git; then
-		_log 3 "_isGitReady(): git is required"
-		exit 1
+		_log 4 "_isGitReady(): git is required"
 	else
 		_gitVersion=$(git --version | cut -d' ' -f3)
-		_log 1 "_isGitReady(): git version is ${_gitVersion}"
+		_log 0 "_isGitReady(): git version is ${_gitVersion}"
 		_gitMajor=$(echo "${_gitVersion}" | cut -d. -f1)
 		_gitMinor=$(echo "${_gitVersion}" | cut -d. -f2)
 		if [ "${_gitMajor}" -eq 2 ] && [ "${_gitMinor}" -ge 28 ]; then
-			_log 1  "_isGitReady(): git version ${_gitVersion} is >= 2.28"
+			_log 0  "_isGitReady(): git version ${_gitVersion} is >= 2.28"
 			return 0
 		else
 			_log 3 "_isGitReady(): git version ${_gitVersion} is not >= 2.28"
-			_log 1 "_isGitReady(): upgrade git to 2.28 or later to use gitdisk"
-			exit 1
+			_log 4 "_isGitReady(): upgrade git to 2.28 or later to use gitdisk"
 		fi
 	fi
 }
@@ -170,6 +165,17 @@ down git to simple object store semantics, poorly.
 EOF
 }
 
+_checkSelf() {
+	# check if already installed
+	# if we are running init and there is no .gitdisk, carry on
+	if [ "${_subCommand:-}" = "init" ] && [ ! -d "${_dotGitdisk}" ]; then
+		return 0
+	# otherwise, check if gitdisk is installed, if not, return 1 
+	# TODO add smarter checks
+	else [ -d "${_dotGitdisk}" ] && return 0 || return 1
+	fi
+}
+
 _isNameValid() {
 	# _isNameValid: check for allowed names
 	# arg = name
@@ -181,8 +187,8 @@ _isNameValid() {
 	#							no dash follows dot and vice versa
 	local _requestedName="${*}"
 	local _strLength=${#_requestedName}
-	_log 1 "_isNameValid(): requestedName=${_requestedName}"
-	_log 1 "_isNameValid(): strLength=${#_requestedName}"
+	_log 0 "_isNameValid(): requestedName=${_requestedName}"
+	_log 0 "_isNameValid(): strLength=${#_requestedName}"
 	# check first char first...must be lowercase or number	
 	if [[ ! ${_requestedName} =~ ^[[:lower:]|[:digit:]] ]]; then
 			_log 3 "_isNameValid(): first char must be letter or digit"
@@ -248,10 +254,10 @@ _isPathWritable() {
 	# arg 1 = full path
 	# return 0 (yes) if writable, 1 (no) if not writable
 	if [ -z "${1}" ]; then
-		_log 3 "_isPathWritable(): requires an argument"
+		_log 2 "_isPathWritable(): requires an argument"
 		return 1
 	elif [ ! -w "${1}" ]; then
-		_log 3 "_isPathWritable(): ${1} is not writable"
+		_log 2 "_isPathWritable(): ${1} is not writable"
 		return 1
 	fi	
 }
@@ -260,10 +266,10 @@ _isPathEmpty() {
 	# arg 1 = full path
 	# return 0 if empty, return 1 if not empty
 	if [ -z "${1}" ]; then
-		_log 3 "_isPathEmpty requires an argument"
+		_log 2 "_isPathEmpty requires an argument"
 		return 1
 	elif [ -n "$(ls -A "${1}" 2>/dev/null)" ]; then
-		_log 3 "_isPathEmpty(): ${1} is NOT empty"
+		_log 0 "_isPathEmpty(): ${1} is NOT empty"
 		return 1
 	fi
 }
@@ -272,10 +278,10 @@ _isPathNew() {
 	# arg 1 = full path
 	# return 0 if new; return 1 if exists 
 	if [ -z "${1}" ]; then
-		_log 3 "_isPathNew requires an argument"
+		_log 2 "_isPathNew requires an argument"
 		return 1
 	elif [ -d "${1}" ]; then
-		_log 3 "_isPathNew(): ${1} exists"
+		_log 0 "_isPathNew(): ${1} exists"
 		return 1
 	fi
 }
@@ -284,41 +290,41 @@ _isPathGitdisk() {
 	# arg 1 = full path
 	# return 0 if gitdisk, return 1 if not
 	if [ -z "${1}" ]; then
-		_log 3 "_isPathGitdisk(): requires an argument"
+		_log 2 "_isPathGitdisk(): requires an argument"
 		return 1
 	elif [[ ! -d "${1}/.git" ]]; then
 		return 1
 	else
-		_log 3 "_isPathGitdisk(): .git exists in ${1}"
+		_log 0 "_isPathGitdisk(): .git exists in ${1}"
 		# TODO add check for gitdisk marker
 		return 0
 	fi
 }
 
-# _createGitdisk: git init _desiredPath
 _createGitdisk() {
 	# arg 1 = full path
 	# return 0 on success, 1 on fail
+	# notice: no name checking here
 	local _uuidMark
 	local _timestampUnix
-	# set that as conditional...global _debug turns it on, or global off, it can
-	# be enabled by hand by changing that one setting
-	# then combine _debug and _log into one...using the local approach here to
-	# pinpoint the area of development, finer grain control, as they say
 	_uuidMark=$(uuidgen | tr "[:upper:]" "[:lower:]")
 	_timestampUnix=$(date +%s)
+	_log 0 "_createGitdisk(): attempting to create ${1}"
 	local _gitdiskSignature="gitdisk: $USER $HOSTNAME ${_timestampUnix} ${_uuidMark}"
 	if [ -z "${1}" ]; then
 		_log 3 "_createGitdisk(): requires an argument"
 		return 1
 	else
-		git init -q -b "${_initialBranch}" "${1}" || _log 3 "_createGitdisk(): create failed: err?: $?" && exit 1
+		#git init -q -b "${_initialBranch}" "${1}" || _log 3 "_createGitdisk(): create failed: err?: $?" && exit 1
+		git init -q -b "${_initialBranch}" "${1}" || _log 3 "_createGitdisk(): create failed: err?: $?" 
 		echo "${_gitdiskSignature}" > "${1}/.git/description"
 		# this will become a gitdisk.tab file (a la fstab)
 		# fields
 		# uuid path user hostname timestamp
+		# TODO fix the line format to include TYPE
+		# type = local, remote, primary, mirror, backup,... ?
 		echo "${_uuidMark} ${1} $USER $HOSTNAME ${_timestampUnix}" >> ~/.gitdisk/gitdisk.tab
-		_log 1 "_createGitdisk(): created ${_uuidMark} at ${1} by $USER on $HOSTNAME"
+		_log 0 "_createGitdisk(): created ${_uuidMark} at ${1} by $USER on $HOSTNAME"
 	fi
 }
 
@@ -339,12 +345,12 @@ _getOpts () {
  	      _SILENT=true
 				;;
 			d)
-				_log 0 "_getOpts(): enabling debug mode"
 				_DEBUG=true
+				_log 0 "_getOpts(): enabled debug mode"
 				;;
 			l)
-				_log 0 "_getOpts(): enabling log mode"
 				_LOG=true
+				_log 0 "_getOpts(): enabled log mode"
 				;;
 			v)
 				echo "${green}verion${reset}: beta"; exit 0
@@ -373,7 +379,6 @@ _getSubcommand() {
 				_log 0 "_getSubcommand(): '$1' called, check for create flags"
 				_subCommand=$1
 				_getCreateOpts
-				# ^^ MOVE THIS to the area with the function 
 				return
 				;;
 			help)
@@ -391,9 +396,7 @@ _getSubcommand() {
 				return
 				;;
 			*)
-				_log 3 "_getSubcommand(): $1 is not a subcommand"
-				echo "${red}ERROR${reset}: $1 is not a valid command"
-				exit 1
+				_log 4 "_getSubcommand(): '$1' is not a subcommand"
 				;;
 		esac
 		shift
@@ -430,10 +433,6 @@ _getCreateOpts() {
 
 _create() {
 	local _desiredPath=$_workingParams
-	if [ ! -d ~/.gitdisk ]; then
-		echo "${red}ERROR${reset}: run 'gitdisk init' first"
-		exit 1
-	fi
 	if [[ -z "${_desiredPath:-}" ]]; then
 		echo "${red}ERROR${reset}: usage: gitdisk create <name>"
 		echo "       <name> must be a full path or relative to PWD"
@@ -471,9 +470,9 @@ _create() {
 			fi
 		fi
 	fi
-	_log 0 "_create(): all conditions passed...creating gitdisk..."
+	_log 0 "_create(): all conditions passed...creating gitdisk at ${_desiredPath}..."
 	if _createGitdisk "${_desiredPath}"; then
-		_log 0 "_create(): gitdisk created at ${_desiredPath}"
+		_log 1 "_create(): gitdisk created at ${_desiredPath}"
 	else
 		_log 3 "_create(): gitdisk failed to create ${_desiredPath}"
 		exit 1
@@ -496,7 +495,6 @@ _getMirrorOpts() {
 				# -l list
 				_mirrorOp=list
 				_log 0 "_getMirrorOpts(): mirror operation 'list' set"
-				echo "list the mirrors for given gitdisk (or pwd)"
 				;;
 			p)
 				# -p pause [DESTINATION]
@@ -505,16 +503,24 @@ _getMirrorOpts() {
 				_log 0 "_getMirrorOpts(): mirror pause enabled for ..."
 				;;
 			?)
-				_log 3 "_getMirrorOpts(): unknown flag -$OPTARG"
-				echo "${red}ERROR${reset}: invalid option to subcommand 'mirror': -$OPTARG"
-				exit 1
+				_log 4 "_getMirrorOpts(): unknown flag for command mirror: -$OPTARG"
 				;;
 		esac
 		done
 		shift $((OPTIND - 1))
 		export _workingParams=$*
 }
+
+# SUB COMMANDS
+# import              import a remote gitdisk
+# sync                sync to remote(s)
+# put                 add a new item to gitdisk
+# mv                  move item within gitdisk
+# rm                  remove item from gitdisk
+# open                open item
+# map                 add namespace mapping
 # mirror              attach a mirror repo
+
 # -d detatch [DESTINATION]
 # -a attach [SOURCE] [DESTINATION]
 # -m mode [sync|async|adapt|manual]
@@ -524,44 +530,30 @@ _mirror() {
 	# gitdisk mirror SOURCE DESTINATION
 	local _source
 	local _remote
-	IFS=' '; read -ra ARGS <<< $_workingParams
-	_source="${ARGS[0]}"
-	_remote="${ARGS[1]}"
+	local OPTIND=1
+	set -- ${_workingParams}
+	_log 0 "_mirror(): args: $@"
+	_source="${1}"
+	_remote="${2}"
 	echo "source: $_source"
 	echo "remote: $_remote"
 }
 
-# import              import a remote gitdisk
-# sync                sync to remote(s)
-# put                 add a new item to gitdisk
-# mv                  move item within gitdisk
-# rm                  remove item from gitdisk
-# open                open item
-# map                 add namespace mapping
-
 _init() {
 	# set up ~/.gitdisk and gitdisktab
 	if [ -f "${_dotGitdisk}/.installed" ]; then
-		_log 3 "gitdisk already installed"
-		echo "${red}ERROR${reset}: gitdisk already installed"
+		_log 3 "_init(): gitdisk already installed"
+		echo "${red}FATAL${reset}: gitdisk already installed"
 		exit 1
 	else
 		_createGitdisk "${_dotGitdisk}"
 		echo "logs/" >> "${_dotGitdisk}/.gitignore"
 		[ ! -d "${_dotGitdisk}/logs" ] && mkdir "${_dotGitdisk}/logs"
 		touch "${_dotGitdisk}/gitdisk.tab"
+		touch "${_dotGitdisk}/logs/gitdisk.log"
 		touch "${_dotGitdisk}/.installed"
-		_log 0 "${_dotGitdisk} created...gitdisk ready to use"
+		_log 1 "_init(): ${_dotGitdisk} created...gitdisk ready to use"
 	fi	
-}
-
-_checkSelf() {
-	# check if installed
-	if [ "${_subCommand:-}" = "init" ] && [ ! -d "${_dotGitdisk}" ]; then
-		_log 0 "_checkSelf(): what is happening here?"
-		return 0
-	else [ -d "${_dotGitdisk}" ] && return 0 || return 1
-	fi
 }
 
 _status() {
@@ -573,24 +565,26 @@ _status() {
 	# 4. gitdisk count
 	# 5. gitdisk mirrors (put 4 & 5 data in a table like so:)
 	# gitdisk    size    object-count   age    freshness    mirrors    rf
-	echo "TODO: _status()"
-	_checkSelf && echo "$? _checkSelf() returns 0 ie ?"
-	exit 0
+	_checkSelf || echo "${red}ERROR${reset}: please run 'gitdisk init' first"
+	exit 1
 }
 
 # MAIN ENTRY AND CONTROL
 
 main() {
+	# what are we trying to do (read all the positional parameters and set VARS)
 	_getOpts "${@}"
-	_log 0 "test"
-	_log 0 "_main(): origParams: $*"
+	_log 0 "_main(): readParams: ${@}"
 	_log 0 "_main(): pairedParams: $_workingParams"
 	_getSubcommand $_workingParams
 	[ -z "${_subCommand:-}" ] && _status
 	_log 0 "_main(): _subCommand: $_subCommand"
 	_log 0 "_main(): remaining arg: $_workingParams"
+	# can we do it
 	_isGitReady
-	_checkSelf || _fatal "ERROR: no .gitdisk dir; run 'gitdisk init' first"
+	#_checkSelf || _fatal "please run 'gitdisk init' first"
+	_checkSelf || _log 4 "please run 'gitdisk init' first"
+	# do it
 	[ -n "${_subCommand:-}" ] && eval _"${_subCommand}"
 }
 main "${@}"
