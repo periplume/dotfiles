@@ -5,7 +5,7 @@
 # TODO make this into an array
 DOTFILES_REMOTE=https://github.com/periplume/dotfiles
 DOTFILES=enable
-PATH=~/bin:$PATH
+PATH=~/bin:$PATH:.
 
 # make this bashrc usable in case dotfiles is not working or set up
 # or if we don't have access to git
