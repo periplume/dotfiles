@@ -27,7 +27,7 @@ set -o pipefail
 
 # debugging and logging settings
 # script debug toggle (set to true to enable default global debugging)
-_DEBUG=false
+_DEBUG=true
 # silent mode for scripting (supresses stdout/stderr)
 _SILENT=false
 # logging facility (debug always goes here, unless)
@@ -41,8 +41,10 @@ cyan=$(tput setaf 6)
 yellow=$(tput setaf 3)
 reset=$(tput sgr0)
 
-# DEFAULTS
+# DEFAULT SETTINGS
 
+# minimum git version required
+_minGitVersion=2.28
 # use "main" as the initial and main branch instead of deprecated indelicate "master"
 _initialBranch="main"
 # set the maximum length of a gitdisk (directory) name
@@ -107,20 +109,22 @@ _log() {
 # HELPER FUNCTIONS
 
 _isGitReady() {
-	# check that our version of git supports this (git >= 2.28)
-	if ! hash git; then
-		_log 4 "_isGitReady(): git is required"
+	# check that our version of git supports this script
+	local _minGitMajor=$(echo "${_minGitVersion}" | cut -f1 -d.)
+	local _minGitMinor=$(echo "${_minGitVersion}" | cut -f2 -d.)
+	if ! hash git 2>/dev/null; then
+		_log 4 "${FUNCNAME[0]}: git not found; git >= ${_minGitVersion} required.  Quitting."
 	else
 		_gitVersion=$(git --version | cut -d' ' -f3)
-		_log 0 "_isGitReady(): git version is ${_gitVersion}"
+		_log 1 "${FUNCNAME[0]}: git version is ${_gitVersion}"
 		_gitMajor=$(echo "${_gitVersion}" | cut -d. -f1)
 		_gitMinor=$(echo "${_gitVersion}" | cut -d. -f2)
-		if [ "${_gitMajor}" -eq 2 ] && [ "${_gitMinor}" -ge 28 ]; then
-			_log 0  "_isGitReady(): git version ${_gitVersion} is >= 2.28"
+		if [ "${_gitMajor}" -ge "${_minGitMajor}" ] && [ "${_gitMinor}" -ge "${_minGitMinor}" ]; then
+			_log 1  "${FUNCNAME[0]}: git version ${_gitVersion} is >= ${_minGitVersion}"
 			return 0
 		else
-			_log 3 "_isGitReady(): git version ${_gitVersion} is not >= 2.28"
-			_log 4 "_isGitReady(): upgrade git to 2.28 or later to use gitdisk"
+			_log 3 "${FUNCNAME[0]}: git version ${_gitVersion} is not >= ${_minGitVersion}"
+			_log 4 "${FUNCNAME[0]}: upgrade git to ${_minGitVersion} or later to use gitdisk"
 		fi
 	fi
 }
@@ -167,8 +171,10 @@ EOF
 
 _checkSelf() {
 	# check if already installed
-	# if we are running init and there is no .gitdisk, carry on
+	# if we are running init and there is no .gitdisk, we can safely return
+	# since the init command will create the .gitdisk control disk
 	if [ "${_subCommand:-}" = "init" ] && [ ! -d "${_dotGitdisk}" ]; then
+		_log 0 "${FUNCNAME[0]}: init called, no .gitdisk detected"
 		return 0
 	# otherwise, check if gitdisk is installed, if not, return 1 
 	# TODO add smarter checks
@@ -333,24 +339,24 @@ _createGitdisk() {
 _getOpts () {
 	# check for global command flags and set VARS accordingly
 	local OPTIND
-	_log 0 "_getOpts(): positional parameters read: $*"
+	_log 0 "${FUNCNAME[0]}: positional parameters read: $*"
 	while getopts ":hsdlv" flag ; do
-		_log 0 "OPTIND=$OPTIND flag=$flag"
+		_log 0 "${FUNCNAME[0]}: OPTIND=$OPTIND flag=$flag"
 		case ${flag} in 
 			h)
 				_printInfo ; _printUsage; exit 0
 				;;
  	    s)
-				_log 0 "_getOpts(): enabling silent mode"
+				_log 0 "${FUNCNAME[0]}: enabling silent mode"
  	      _SILENT=true
 				;;
 			d)
 				_DEBUG=true
-				_log 0 "_getOpts(): enabled debug mode"
+				_log 0 "${FUNCNAME[0]}: enabled debug mode"
 				;;
 			l)
 				_LOG=true
-				_log 0 "_getOpts(): enabled log mode"
+				_log 0 "${FUNCNAME[0]}: enabled log mode"
 				;;
 			v)
 				echo "${green}verion${reset}: beta"; exit 0
@@ -364,19 +370,19 @@ _getOpts () {
 	# export a paired down parameter string flags and args read within this
 	# function will be discarded, leaving behind only that which the rest needs
 	export _workingParams=$*
-	_log 0 "_LOG=${_LOG}"
-	_log 0 "_SILENT=${_SILENT}"
-	_log 0 "_DEBUG=${_DEBUG}"
+	_log 1 "${FUNCNAME[0]}: _LOG=${_LOG}"
+	_log 1 "${FUNCNAME[0]}: _SILENT=${_SILENT}"
+	_log 1 "${FUNCNAME[0]}: _DEBUG=${_DEBUG}"
 	return
 }
 
 _getSubcommand() {
 	# look for the first subcommand and set _subCommand accordingly
 	while ((${#})); do
-		_log 0 "_getSubcommand(): reading parameter '${1}'"
+		_log 0 "${FUNCNAME[0]}: reading parameter '${1}'"
 		case $1 in
 			create)
-				_log 0 "_getSubcommand(): '$1' called, check for create flags"
+				_log 0 "${FUNCNAME[0]}: '$1' called, checking for create flags now"
 				_subCommand=$1
 				_getCreateOpts
 				return
@@ -409,17 +415,18 @@ _getCreateOpts() {
 	# check for create flags and args
 	local OPTIND=1
 	set -- ${_workingParams}
-	_log 0 "_getCreateOpts(): positional parameters read: $*"
+	_log 0 "${FUNCNAME[0]}: positional parameters read: $*"
 	shift
 	while getopts ":fo:" flag "$@" ; do
 		case ${flag} in 
 			f)
 				_forceCreate=true
-				_log 0 "_getCreateOpts(): force mode is enabled"
+				_log 0 "${FUNCNAME[0]}: force mode is enabled"
 				;;
 			o)
-				_log 0 "_getCreateOpts(): setting option _createObjectHold=$OPTARG"
-				_createObjectHold=$OPTARG
+				_log 0 "${FUNCNAME[0]}: setting option _createObjectOptions=$OPTARG"
+				_createObjectOptions=$OPTARG
+				# placeholder for arbitrary options that can be passed in
 				;;
 			?)
 				echo "${red}ERROR${reset}: invalid option: -$OPTARG"
@@ -574,15 +581,14 @@ _status() {
 main() {
 	# what are we trying to do (read all the positional parameters and set VARS)
 	_getOpts "${@}"
-	_log 0 "_main(): readParams: ${@}"
-	_log 0 "_main(): pairedParams: $_workingParams"
+	_log 0 "${FUNCNAME[0]}: parameters read: ${@}"
+	_log 0 "${FUNCNAME[0]}: paired-down parameters: $_workingParams"
 	_getSubcommand $_workingParams
 	[ -z "${_subCommand:-}" ] && _status
-	_log 0 "_main(): _subCommand: $_subCommand"
-	_log 0 "_main(): remaining arg: $_workingParams"
+	_log 0 "${FUNCNAME[0]}: _subCommand: $_subCommand"
+	_log 0 "${FUNCNAME[0]}: remaining args: $_workingParams"
 	# can we do it
 	_isGitReady
-	#_checkSelf || _fatal "please run 'gitdisk init' first"
 	_checkSelf || _log 4 "please run 'gitdisk init' first"
 	# do it
 	[ -n "${_subCommand:-}" ] && eval _"${_subCommand}"
