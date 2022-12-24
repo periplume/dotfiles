@@ -233,6 +233,3 @@ __prompt_command() {
     fi
 }
 
-# source platform-specific files
-[ "$(uname)" = "Darwin" ] && source .bashrc_mac || true
-[ "$(uname)" = "Linux" ] && source .bashrc_linux || true
