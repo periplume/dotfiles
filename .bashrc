@@ -178,9 +178,6 @@ function dotfiles_status() {
 # if true, set PS1 as static
 # else, set PROMPT_COMMAND with the fancy function below
 
-# also fix this problem...i was using PROMPT_COMMAND to flush bash history to
-# the history file after every command...which broke...so add the history
-# command to the __prompt_command and the static PS1 build above
 PROMPT_COMMAND=__prompt_command
 __prompt_command() {
     local _lastExit="$?"
@@ -189,7 +186,9 @@ __prompt_command() {
 		# now get to buisness
 		local _localRepo=$(dotfiles rev-list --max-count=1 master)
 		#local _remoteRepo=$(dotfiles rev-list --max-count=1 origin/master)
-		local _remoteRepo=$(dotfiles ls-remote origin HEAD | awk '{ print $1 }')
+		# this command above does not work
+		#local _remoteRepo=$(dotfiles ls-remote origin HEAD | awk '{ print $1 }')
+		# this command above is too slow for the prompt
 		local reset='\[\e[0m\]'
     local red='\[\e[0;31m\]'
     local redbold='\[\e[1;31m\]'
@@ -219,11 +218,13 @@ __prompt_command() {
 		fi
 
 		# test if local repo is in sync with remote
-  	if [[ $_localRepo == "$_remoteRepo" ]]; then
+  	#if [[ $_localRepo == "$_remoteRepo" ]]; then
 			PS1+="${green}o${reset} "
-		else
-			PS1+="${yellowbold}x${reset} "
-		fi
+		#else
+		#	PS1+="${yellowbold}x${reset} "
+		#fi
+		# this is just too slow...waiting on ls-remote that is...leave this for
+		# status and keep the prompt clean
 
 		# change prompt color based on last command exit status
     if [ $_lastExit != 0 ]; then
