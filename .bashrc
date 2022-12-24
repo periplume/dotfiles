@@ -117,6 +117,7 @@ alias dotfi=dotfiles
 # improve this with printf
 function dotfiles_status() {
 	local _localBranchName="master"
+	#local _remoteBranchName="origin/master"
 	local _remoteBranchName="origin/master"
 
 	# test if local working tree is clean or not
@@ -150,7 +151,8 @@ function dotfiles_status() {
 	# fetch last common ancestor between local and remote and latest HEAD refs
   local _lastBase=$(dotfiles merge-base $_localBranchName $_remoteBranchName)
   local _localHead=$(dotfiles rev-parse $_localBranchName)
-  local _remoteHead=$(dotfiles rev-parse $_remoteBranchName)
+  #local _remoteHead=$(dotfiles rev-parse $_remoteBranchName)
+	local _remoteHead=$(dotfiles ls-remote origin HEAD | awk '{ print $1 }')
 	
 	# test sync of local with remote refs as tracked in local
   if [[ $_localHead == "$_remoteHead" ]]; then
@@ -186,7 +188,8 @@ __prompt_command() {
 		history -a
 		# now get to buisness
 		local _localRepo=$(dotfiles rev-list --max-count=1 master)
-		local _remoteRepo=$(dotfiles rev-list --max-count=1 origin/master)
+		#local _remoteRepo=$(dotfiles rev-list --max-count=1 origin/master)
+		local _remoteRepo=$(dotfiles ls-remote origin HEAD | awk '{ print $1 }')
 		local reset='\[\e[0m\]'
     local red='\[\e[0;31m\]'
     local redbold='\[\e[1;31m\]'
