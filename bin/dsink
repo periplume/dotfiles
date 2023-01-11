@@ -307,7 +307,7 @@ _format() {
 
 _findUsbDisk() {
 	# attempt to locate the usb drive
-	local _usbDevicesBefore=$(ls /sys/block | grep ^sd)
+	local _usbDevicesBefore=$(ls /sys/block | grep ^sd | tr '\n' ' ')
 	local _usbDevicesAfter
 	local _attempts=3
 	local _timer=10 # time we will wait for user input
@@ -320,7 +320,7 @@ _findUsbDisk() {
 		elif [[ ${_KEY} = "" ]]; then
 			echo -e "\nchecking for new drive..."
 			sleep ${_sleep}
-			_usbDevicesAfter=$(ls /sys/block | grep ^sd)
+			_usbDevicesAfter=$(ls /sys/block | grep ^sd | tr '\n' ' ')
 			echo "before: ${_usbDevicesBefore}"
 			echo "after: ${_usbDevicesAfter}"
 			if [[ -z "${_usbDevicesBefore}" ]]; then
