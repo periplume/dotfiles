@@ -329,7 +329,8 @@ _findUsbDisk() {
 			if [[ "${_usbDevicesBefore}" == "${_usbDevicesAfter}" ]]; then
 				echo "NO new device detected"
 			else
-				_newtarget=$(comm -13 <(echo $_usbDevicesBefore) <(echo $_usbDevicesAfter))
+				# as ugly as it gets
+				_newtarget=$(comm -13 <(tr ' ' $'\n' <<< $_usbDevicesBefore | sort) <(tr ' ' $'\n' <<< $_usbDevicesAfter | sort))
 				echo "is $_newtarget correct?"
 			fi
 			return 0
