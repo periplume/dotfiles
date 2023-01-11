@@ -321,8 +321,8 @@ _findUsbDisk() {
 			echo -e "\nchecking for new drive..."
 			sleep ${_sleep}
 			_usbDevicesAfter=$(ls /sys/block | grep ^sd)
-			#echo "before: ${_usbDevicesBefore}"
-			#echo "after: ${_usbDevicesAfter}"
+			echo "before: ${_usbDevicesBefore}"
+			echo "after: ${_usbDevicesAfter}"
 			if [[ -z "${_usbDevicesBefore}" ]]; then
 				echo "none to start...and now we see ${_usbDevicesAfter}"
 			fi
