@@ -2,9 +2,13 @@
 # github.com/periplume/dotfiles.git
 #set -x
 #set -euo pipefail
+
+# define the remote repository (or multiple for redundancy)
 # TODO make this into an array
 DOTFILES_REMOTE=https://github.com/periplume/dotfiles
 DOTFILES=enable
+
+# set up $PATH to include the dotfiles bin/ directory of scripts
 PATH=~/bin:$PATH:.
 
 # make this bashrc usable in case dotfiles is not working or set up
@@ -12,7 +16,7 @@ PATH=~/bin:$PATH:.
 if ! hash git 
 then
 	# we can't do what we want to do without git
-	DOTFILES_DISABLE=true
+	DOTFILES=disable
 else
 	if [ ! -d ~/.dotfiles ]
 	then
@@ -26,6 +30,9 @@ fi
 
 # be quiet for godsake
 set bell-style visible
+
+# set up bash completions
+source /etc/profile.d/bash_completions.sh
 
 # bash history settings
 # append to the history file, don't overwrite it
@@ -80,6 +87,16 @@ export LESS=-R
 # disable ctrl-s 
 stty -ixon
 
+
+# separate the dotfiles into a sourced file
+# call it giot as in git-io, a disk
+# for prompt-command...and async
+# use touch files in ~/.dotfiles
+# touch and untouch before writes and after RF2+ completes
+# background the remote sync job...track it...and then when it completes
+# let it touch (or rm) the sync file
+
+
 # dotfiles management with git
 dotfiles () {
 	if [[ $1 = "help" ]]
@@ -90,12 +107,12 @@ dotfiles () {
 		echo "          'dotfiles commit -m \"fixed such and such\"  to commit changes to repo"
 		echo "          'dotfiles push' to push changes to upstream repo"
 	elif [[ $1 = "save" ]]; then
-		_commitMsg="dotfi save by $USER"
+		_commitMsg="dotfi save by $USER on $HOSTNAME"
 		git --git-dir=$HOME/.dotfiles --work-tree=$HOME commit -a -m "${_commitMsg}"
 		git --git-dir=$HOME/.dotfiles --work-tree=$HOME push
-		echo "TODO check for errors...check consistency"
-		echo "safe writes...check that in-sync...add an arbitrary timer to"
-		echo " add random into a race condition...rare though it could be"
+		#echo "TODO check for errors...check consistency"
+		#echo "safe writes...check that in-sync...add an arbitrary timer to"
+		#echo " add random into a race condition...rare though it could be"
 		# TODO can we track "how" dirty is the working file?
 		#      also check how many commits behind
 		#      then calculate a dirty score as a VAR and change the = which is
@@ -119,6 +136,8 @@ function dotfiles_status() {
 	local _localBranchName="master"
 	#local _remoteBranchName="origin/master"
 	local _remoteBranchName="origin/master"
+	# the last hash of the local master branch
+	local _localRef=$(dotfi rev-parse master)
 
 	# test if local working tree is clean or not
   if dotfiles diff --quiet
@@ -180,11 +199,18 @@ function dotfiles_status() {
 
 PROMPT_COMMAND=__prompt_command
 __prompt_command() {
+		# present a snappy and informative prompt
+		# USER HOST DIR REPO SIGN
+		# USER = who is logged in
+		# HOST = name of the computer
+		# DIR = current working directory
+		# REPO = state of repo, ie CLEAN (no edits) vs DIRTY (edits not saved)
+		# SIGN = indicator of last command (green = success, red = failure)
     local _lastExit="$?"
 		# flush out bash history every command
 		history -a
 		# now get to buisness
-		local _localRepo=$(dotfiles rev-list --max-count=1 master)
+		#local _localRepo=$(dotfiles rev-list --max-count=1 master)
 		#local _remoteRepo=$(dotfiles rev-list --max-count=1 origin/master)
 		# this command above does not work
 		#local _remoteRepo=$(dotfiles ls-remote origin HEAD | awk '{ print $1 }')
@@ -198,7 +224,7 @@ __prompt_command() {
     local blue='\[\e[0;34m\]'
     local purple='\[\e[0;35m\]'
 
-		# show user host and working dir first
+		# show user, host, and working dir first
 		PS1="${blue}\u${reset} ${green}\h${reset} ${purple}\w${reset} "
 
 		# test if local working tree is clean or not

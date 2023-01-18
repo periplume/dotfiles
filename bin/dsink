@@ -23,8 +23,11 @@ set -o nounset
 set -o pipefail
 #set -x
 
+# SOURCE DIR NAMES TO MANAGE
+_dsinkSourceDirs=(studio lab office house library)
+
 # REQUIRED EXTERNAL COMMANDS
-_requiredCommands=(rsync cryptsetup lsblk parted)
+_requiredCommands=(rsync cryptsetup lsblk parted wipefs)
 
 # ENVIRONMENT SETTINGS
 
@@ -61,7 +64,7 @@ _log() {
 	# 0=debug eg: _log 0 "func(): value x was found and changed into x2"
 	# 1=info eg: _log 1 "main(): set parameters to x y and z"
 	# 2=warn eg: _log 2 "func(): doing y because the force flag was set"
-	# 3=error eg: _log 3 "main(): error, will continue trying"
+	# 3=error eg: _log 3 "main(): non-fatal error, will continue trying"
 	# 4=fatal eg: _log 4 "main(): fatal error, quitting"
 	# ARG1 = log level (can be overridden by setting _logLevelOverride)
 	# prints 1-3 no matter what, unless _LOG is false and/or _SILENT is true
@@ -71,8 +74,7 @@ _log() {
 	local _logMessage="${@:2}"
 	local _canLog=false
 	# set timestamp for log message (unix seconds)
-	local _timeStamp
-	_timeStamp=$(date +%s)
+	local _timeStamp=$(date +%s)
 	# define log levels and colors
 	declare -A _i=([0]=DEBUG [1]=INFO [2]=WARN [3]=ERROR [4]=FATAL)
 	declare -A _c=([0]=cyan [1]=green [2]=yellow [3]=red [4]=boldred)
@@ -204,8 +206,7 @@ _getSubcommand() {
 			format)
 				_log 0 "_getSubcommand(): '$1' called, check for format flags"
 				_subCommand=$1
-				# if no additional flags are expected, setting this stems the problem
-				_workingParams=
+				_getFormatOptions
 				return
 				;;
 			mount)
@@ -226,6 +227,12 @@ _getSubcommand() {
 			report)
 				_log 0 "_getSubcommand(): '$1' called, check for mirror flags"
 				_subCommand=$1
+				return
+				;;
+			test)
+				_log 0 "_getSubcommand(): '$1' called, check for format flags"
+				_subCommand=$1
+				_getTestOptions
 				return
 				;;
 			*)
@@ -256,10 +263,6 @@ _isEnvSufficient() {
 	[ ${_sufficient} = true ] && return 0 || return 1
 }
 
-_status() {
-	echo "STATUS:${green} OK${reset}"
-	exit 0
-}
 
 # SUBCOMMAND FUNCTIONS AND SUBFUNCTIONS
 _getBackupOpts() {
@@ -284,6 +287,47 @@ _getBackupOpts() {
 	export _workingParams=$*
 }
 
+_getFormatOptions() {
+	local OPTIND=1
+	set -- ${_workingParams}
+	_log 0 "${FUNCNAME[0]}: positional parameters read: $*"
+	shift
+	while getopts ":f" flag "$@"; do
+		case ${flag} in
+			f)
+				_forceFormat=true
+				_log 1 "${FUNCNAME[0]}: force mode enabled"
+				;;
+			?)
+				_log 3 "${FUNCNAME[0]}: unknown flag -$OPTARG"; exit 1
+				;;
+		esac
+	done
+	shift $((OPTIND - 1))
+	export _workingParams=$*
+}
+
+_getTestOptions() {
+	local OPTIND=1
+	set -- ${_workingParams}
+	_log 0 "${FUNCNAME[0]}: positional parameters read: $*"
+	shift
+	while getopts ":f" flag "$@"; do
+		case ${flag} in
+			f)
+				_forceFormat=true
+				_log 1 "${FUNCNAME[0]}: force mode enabled"
+				;;
+			?)
+				_log 3 "${FUNCNAME[0]}: unknown flag -$OPTARG"; exit 1
+				;;
+		esac
+	done
+	shift $((OPTIND - 1))
+	export _workingParams=$*
+}
+	
+
 # SUB COMMANDS
 #backup              synchronize defined local contents to mounted usb
 #restore             reverse synchronize from usb to local device
@@ -296,49 +340,179 @@ _getBackupOpts() {
 _backup() {
 	# rsync from local source to mounted usb destination
 	echo "backup from here to usb happening..."
+	_rsyncDest="$_dsinkMount"
 }
 
 _format() {
-	# prompt user to insert usb
-	local _usbDevicesBefore
-	local _usbDevicesAfter
-	_findUsbDisk
+	_findInsertedUsbDisk || _log 4 "no new usable usb disk found"
+	echo -n "is ${yellow}$_newInsertedUsbDisk${reset} the one? [Y/n] "
+	read -r -s -t 10 -n 1 _YES
+	if [[ ${_YES} != "Y" ]]; then
+		_log 4 "user exited"
+	fi
+	local _newDsinkDisk="/dev/${_newInsertedUsbDisk}"
+	local _newDsinkDiskPartition="${_newDsinkDisk}1"
+	findmnt ${_newDsinkDiskPartition} && _log 4 "${_newDsinkDiskPartition} is MOUNTED"
+	# since we're going to reformat this device, we should wipe it before
+	# either wipefs -a /dev/sdX
+	# wipefs --all --backup /dev/sdX
+	# or dd if=/dev/zero of=/dev/sdX bs=512 count=1 conv=notrunc
+	sudo wipefs --all --backup ${_newDsinkDisk} &>/dev/null || _log 4 "ERROR"
+	echo "erased the partiton table; writing new label now"
+	until ls ${_newDsinkDisk} &>/dev/null; do
+		sleep 1
+		echo "waiting on ${_newDsinkDisk}"
+	done
+	sudo parted -s ${_newDsinkDisk} mklabel gpt
+	sudo parted -s ${_newDsinkDisk} mkpart dsink 1 100%
+	# note: waiting on devices is tricky
+	# using:
+	# watch -n0.1 -be ls -l /dev/sda1
+	# but the easiest fix is to sleep to let the kernel repopulate the device file
+	sleep 1
+	sudo cryptsetup luksFormat --verify-passphrase --batch-mode ${_newDsinkDiskPartition}
+	sudo cryptsetup luksOpen ${_newDsinkDiskPartition} dsink
+	until ls /dev/mapper/dsink 2>/dev/null; do
+		echo -n "waiting on /dev/mapper/dsink"
+		sleep 1
+	done
+	sudo mkfs.ext4 /dev/mapper/dsink -L dsink
+	# this function is not robust
 }
 
-_findUsbDisk() {
-	# attempt to locate the usb drive
-	local _usbDevicesBefore=$(ls /sys/block | grep ^sd | tr '\n' ' ' | sort)
-	local _usbDevicesAfter
+_status() {
+	echo "STATUS:${green} OK${reset}"
+	exit 0
+}
+
+_test() {
+	# function for use in testing things during development
+	_isBlockDevice $_workingParams && echo BLOCK || echo NOT BLOCK
+	set -x
+	#_PTUUID=$(_getPTUUID $_workingParams) || echo "NOPE"
+	_getPTUUID $_workingParams
+	_getBlockType $_workingParams
+	echo "TEST "
+	exit 0
+}
+
+_isBlockDevice() {
+	# arg1 = whole disk device to check (eg sda)
+	# return 0 if true, 1 if false
+	#[ -b /dev/${1:-null} ] || return 1
+	[ -b /dev/${1:-null} ]
+}
+
+_getBlockType() {
+	# arg1 = whole disk device (eg sda)
+	# return (echo) the disk type reported by lsblk
+	local _diskType=$(lsblk -oTYPE /dev/${1})
+	echo $_diskType
+}
+
+_getPTUUID() {
+	# ARG1 = sd device (eg sda)
+	# the PTUUID is cataloged into dsink.disks at the time of format
+	# return 1 if no device or not block
+	# return 2 if no PTUUID found
+	# echo the whole disk partition table UUID if found
+	local _rawDevice=${1}
+	_isBlockDevice $_rawDevice || return 1
+	local _PTUUID=$(lsblk -Sn -oPTUUID /dev/${_rawDevice} 2>/dev/null)
+	if [ -z "$_PTUUID" ]; then
+		return 2
+	else
+		echo "$_PTUUID"
+	fi
+}
+	
+
+_findInsertedUsbDisk() {
+	# to be run when new usb device needs to be found
+	# interactive prompt with user
+	# sequence requires prompt, user to manually insert device, discovery
+	# return 1 when no NEW devices found
+	# return 0 when new device is discovered (and confirmed)
+	# makes global the VAR _newInsertedUsbDisk
+	local _usbDisksBefore=($(ls /sys/block | grep ^sd))
+	local _usbDisksAfter
+	declare -g _newInsertedUsbDisk
 	local _attempts=3
-	local _timer=10 # time we will wait for user input
-	local _sleep=4  # sleep to ensure kernel has time to recognize drive
-	echo "insert usb device now"
+	local _timer=20
+	echo "insert new usb disk now, then press ENTER to proceed"
 	while [ ${_attempts} -gt 0 ]; do
-		read -r -s -t ${_timer} -n 1 -p "ENTER to proceed, q to quit " _KEY
+		echo "press ENTER to ${green}proceed${reset}, q to ${red}quit${reset}"
+		read -r -s -t ${_timer} -n 1 _KEY
 		if [[ ${_KEY} = "q" ]]; then
 			echo -e "\nuser exited"; exit 1
 		elif [[ ${_KEY} = "" ]]; then
-			echo -e "\nchecking for new drive..."
-			sleep ${_sleep}
-			_usbDevicesAfter=$(ls /sys/block | grep ^sd | tr '\n' ' ' | sort)
-			echo "before: '${_usbDevicesBefore}'"
-			echo "after: '${_usbDevicesAfter}'"
-			#if [[ -z "${_usbDevicesBefore}" ]]; then
-			#	echo "none to start...and now we see ${_usbDevicesAfter}"
-			#fi
-			if [[ "${_usbDevicesBefore}" == "${_usbDevicesAfter}" ]]; then
-				echo "NO new device detected"
+			echo -e "\nsearching for new drive now..."
+			# the sleep here gives the kernel time to add the device
+			sleep 9
+			# NOTE: SEAGATE SPINNING DISK TAKES A LONG TIME...10 seconds is needed!
+			_usbDisksAfter=($(ls /sys/block | grep ^sd))
+			_newDeviceCount=$((${#_usbDisksAfter[@]}-${#_usbDisksBefore[@]}))
+			if [[ $_newDeviceCount -eq 1 ]]; then
+				break
+			elif [[ $_newDeviceCount -eq 0 ]]; then
+				return 1
 			else
-				# as ugly as it gets
-				_newtarget=$(comm -13 <(tr ' ' $'\n' <<< $_usbDevicesBefore | sort) <(tr ' ' $'\n' <<< $_usbDevicesAfter | sort))
-				echo "is $_newtarget correct?"
+				_log 4 "$_newDeviceCount new sd devices found, unexpected"
 			fi
-			return 0
-		else
-			_attempts=$((_attempts - 1))
-			echo -e "\r"
 		fi
 	done
+	# find the new device by comparing before and after lists
+	for i in "${_usbDisksAfter[@]}"; do
+		skip=
+		for x in "${_usbDisksBefore[@]}"; do
+			[[ $i == $x ]] && { skip=1; break; }
+		done
+			[[ -n $skip ]] || _newInsertedUsbDisk=$i
+	done
+	_deviceFile="/dev/${_newInsertedUsbDisk}"
+	_devicePartitionList=$(ls ${_deviceFile}? | tr '\n' ' ')
+	_isBlockDevice ${_deviceFile} && echo ERRRRRRRRRRRRRROR 
+	ls ${_deviceFile}?
+	#
+	# NEED TO make more robust...ie if there are no partitions
+	echo -e "\n==============PHYSICAL:========================================"
+	lsblk -S -oNAME,SIZE,VENDOR,PTTYPE,SERIAL,PTUUID ${_deviceFile}
+	echo -e "\n==============LOGICAL:========================================="
+	if [ -n "${_devicePartitionList}" ]; then
+		lsblk -oNAME,PARTLABEL,SIZE,FSTYPE,PARTUUID ${_devicePartitionList} 
+	else
+		echo "no partitions found on device"
+	fi
+	_mounts=0
+	echo -e "\n==============STATE:==========================================="
+	for i in ${_devicePartitionList}; do
+		if findmnt $i >/dev/null; then
+			_target=$(findmnt -n -o TARGET $i)
+			echo "$i is ${red}MOUNTED${reset} as ${_target}"
+			if ls -A1q "${_target}" | grep -q .; then
+				! echo "$i is ${red}NOT EMPTY${reset}"
+				echo "check the data...will not proceed"
+				_mounts=1
+			else
+				echo "$i is ${green}EMPTY${reset}"
+				echo "press ENTER to ${yellow}unmount${reset}, q to ${red}abort${reset}"
+				read -r -s -t ${_timer} -n 1 _UM
+				if [[ ${_UM} = "q" ]]; then
+					_log 4 "user exited...unmount $_target and retry"
+				elif [[ ${_UM} = "" ]]; then
+					sudo umount "${_target}" || _log 4 "could not unmount $_target"
+					_mounts=0
+				else
+					_mounts=1
+				fi
+			fi
+		fi
+	done
+	if [[ $_mounts -eq 0 ]]; then
+		return 0
+	else
+		return 1
+	fi
 }
 
 _unmount() {
@@ -354,10 +528,37 @@ _unmount() {
 _mount() {
 	# prompt use to insert dsink usb, open luks dsink, mount fs
 	# check for mount first
+	_detectedDsinkDevice=
 	_checkMount && _log 4 "dsink device already mounted"
 	echo "insert dsink usb now"
-	sudo cryptsetup luksOpen /dev/sda1 dsink
-	sudo mount /dev/mapper/dsink "${_dsinkMount}"
+	if [ -e /dev/disk/by-partlabel/dsink ]; then
+		echo "dsink partition detected"
+		_detectedDsinkDevice=$(readlink -f /dev/disk/by-partlabel/dsink)
+	else
+		echo "no dsink partition available"
+	fi
+	if [ -n "${_detectedDsinkDevice}" ]; then
+		if [ ! -e /dev/mapper/dsink ]; then
+			sudo cryptsetup luksOpen ${_detectedDsinkDevice} dsink
+		fi
+		sudo mount /dev/mapper/dsink "${_dsinkMount}"
+		sudo chown jason:jason "${_dsinkMount}"
+	else
+		echo "insert a dsink device and try again"
+	fi
+}
+
+_checkMapperFile() {
+	if [ -e /dev/mapper/dsink ]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+_findUnmountedDsink() {
+	# search for a dsink device
+	echo DO
 }
 
 _checkMount() {
