@@ -46,6 +46,7 @@ cyan=$(tput setaf 6)
 yellow=$(tput setaf 3)
 prompt=$(tput setab 5; tput setaf 7)
 reset=$(tput sgr0)
+label=$(tput setab 7; tput setaf 0)
 
 # DEFAULT SETTINGS
 
@@ -54,8 +55,9 @@ _dsinkDirName=dsink
 _dsinkDir="$(dirname ~/.)/${_dsinkDirName}"
 _dsinkConf="${_dsinkDir}/dsink.conf"
 _logFile="${_dsinkDir}/dsink.log"
-_dsinkCatalog="${_dsinkDir}/dsink.catalog"
-_dsinkMount="${_dsinkDir}/media"
+_dsinkCatalog="${_dsinkDir}/catalog"
+_dsinkMedia="${_dsinkCatalog}/media"
+_dsinkMount="${_dsinkDir}/mount"
 
 # global variables we use
 # _findNewDisk: declare -g _newDiskDevice
@@ -283,7 +285,9 @@ _isEnvSufficient() {
 	if [ ! -d "${_dsinkDir}" ]; then
 		_log 2 "${FUNCNAME[0]}: no ${_dsinkDir}, creating now"
  		mkdir -p "${_dsinkMount}" || _log 4 "${FUNCNAME[0]}: cannot make ${_dsinkDir}"
-		touch "${_dsinkConf}" "${_logFile}" "${_dsinkCatalog}"
+		touch "${_dsinkConf}" "${_logFile}"
+		mkdir -p "${_dsinkCatalog}"
+		mkdir -p "${_dsinkMedia}"
 	fi
 	[ ${_sufficient} = true ] && return 0 || return 1
 }
@@ -365,71 +369,76 @@ _getTestOptions() {
 _backup() {
 	# rsync from local source to mounted usb destination
 	echo "backup from here to usb happening..."
-	_rsyncDest="$_dsinkMount"
+	_rsyncDest="${_dsinkMount}"/rsync/
+	echo "backup from $HOME/studio to ${_rsyncDest}"
+	rsync -a $HOME/studio/ "${_rsyncDest}"
 }
 
 _format() {
 	_findNewDisk || _log 4 "no new disk found" && _log 1 "found ${_newDiskDevice}"
 	_printDiskInfo "${_newDiskDevice}"
 	_prompt "is ${green}${_newDiskDevice}${reset} the desired disk? [type YES to proceed] "
-	read -r -s -t 10 -n 3 _YES ; echo
+	read -r -s -t 15 -n 3 _YES ; echo
 	if [[ "${_YES}" != "YES" ]]; then
 		_log 4 "uppercase YES is required, try again"
 	fi
 	local _newDsinkDisk="${_newDiskDevice}"
 	local _newDsinkDiskPartition="${_newDsinkDisk}1"
-	#findmnt ${_newDsinkDiskPartition} && _log 4 "${_newDsinkDiskPartition} is MOUNTED"
-	# since we're going to reformat this device, we should wipe it before
-	# either wipefs -a /dev/sdX
-	# wipefs --all --backup /dev/sdX
-	# or dd if=/dev/zero of=/dev/sdX bs=512 count=1 conv=notrunc
-	sudo wipefs --all --backup ${_newDsinkDisk} &>/dev/null || _log 4 "ERROR"
-	_log 1 "erased the partiton table on ${_newDsinkDisk}; writing new label now"
-	#echo "erased the partiton table; writing new label now"
-	until ls ${_newDsinkDisk} &>/dev/null; do
-		sleep 1
-		echo "waiting on ${_newDsinkDisk}"
-	done
-	sudo parted -s ${_newDsinkDisk} mklabel gpt
-	_getPTUUID ${_newDsinkDisk}
-	sudo parted -s ${_newDsinkDisk} mkpart dsink 1 100%
-	exit
+	_doWritePartition "${_newDsinkDisk}" || _log 4 "failed to write partition on ${1}"
+	_ptuuid=$(_getPTUUID ${_newDsinkDisk}) || _log 4 "could not get disk id"
+	if [ -d "${_dsinkCatalog}"/media/"${_ptuuid:0:3}" ]; then
+		# disk id already exists
+		_log 3 "disk id ${_ptuuid:0:3} collided"
+		while [ -d "${_dsinkCatalog}"/media/"${_ptuuid:0:3}" ]; do
+			_doWritePartition "${_newDsinkDisk}" _log 4 "failed to rewrite partition with unique id on ${1}"
+		done
+	fi
+	_log 0 "ptuuid=${_ptuuid}"
+	_log 0 "disk id is ${_ptuuid:0:3}"
+	mkdir "${_dsinkCatalog}"/media/"${_ptuuid:0:3}"
+	touch "${_dsinkCatalog}"/media/"${_ptuuid:0:3}"/"${_ptuuid:3}"
+	_isDeviceReady "${_newDsinkDisk}"
 	# note: waiting on devices is tricky
-	# using:
 	# watch -n0.1 -be ls -l /dev/sda1
-	# but the easiest fix is to sleep to let the kernel repopulate the device file
-	#set -x
-	#_counter=10
-	#while [ $_counter -gt 0 ]; do
-	#	if ! _PTUUID=$(_getPTUUID $_newDsinkDisk); then
-	#		echo -n "[waiting on $_newDsinkDisk ; $_counter of 5"
-	#		((_counter--))
-	#		sleep 1
-	#	else
-	#		_counter=0
-	#	fi
-	#done
-	#_counter=5
-	until [ $(stat -c "%G" ${_newDsinkDisk}) = "disk" ]; do
-		echo "waiting on ${_newDsinkDisk}..."
-	done
-	sudo cryptsetup luksFormat --verify-passphrase --batch-mode ${_newDsinkDiskPartition}
-	#while [ $_counter -gt 0 ]; do
-	#	if ! sudo cryptsetup luksFormat --verify-passphrase --batch-mode ${_newDsinkDiskPartition}; then
-	#		echo "[waiting on $_newDsinkDisk ; $_counter "
-	#		((_counter--))
-	#		#sleep 1
-	#	else
-	#		_counter=0
-	#	fi
-	#done
-	sudo cryptsetup luksOpen ${_newDsinkDiskPartition} dsink
+	_isDeviceReady "${_newDsinkDisk}"1
+	_doEncrypt "${_newDsinkDisk}"1 && touch "${_dsinkCatalog}"/media/"${_ptuuid:0:3}"/encrypted
+	_doWriteFS && touch "${_dsinkCatalog}"/media/"${_ptuuid:0:3}"/ready
+}
+
+# disk media catalog
+# 1. DIR disk id: $_ptuuid:0:3
+# 2. TOUCH remaining ptuuid
+# 3. file size to contain disk size
+# other attributes
+# nickname
+# status (in-use, lost, corrupted, destroyed)
+
+_doWriteFS() {
+	# no args...always write to the mapper device
 	until ls /dev/mapper/dsink 2>/dev/null; do
 		echo -n "waiting on /dev/mapper/dsink"
 		sleep 1
 	done
-	sudo mkfs.ext4 /dev/mapper/dsink -L dsink
-	# this function is not robust
+	sudo mkfs.ext4 -q /dev/mapper/dsink -L dsink
+}
+
+_doEncrypt() {
+	# arg 1 = partition (eg /dev/sda1)
+	# encrypt the device with luks, then open the device
+	sudo cryptsetup luksFormat --verify-passphrase --batch-mode ${1}
+	_log 1 "${1} encrypted, next open the device..."
+	sudo cryptsetup luksOpen ${1} dsink
+}
+
+_doWritePartition() {
+	# arg 1 = /dev/sda
+	# 
+	_isBlockDevice ${1} || _log 4 "${1} is not a block device"
+	_isDeviceWritable ${1} || _log 4 "${1} is not ready"
+	sudo wipefs --all ${1} &>/dev/null || _log 4 "failed to wipefs ${1}"
+	sudo parted -s ${1} mklabel gpt
+	sudo parted -s ${1} mkpart dsink 1 100%
+	_getPTUUID ${1} &>/dev/null || return 1
 }
 
 _status() {
@@ -461,7 +470,7 @@ _isDeviceReady() {
 		sleep 0.1
 	done
 	_isDeviceWritable $1 || _log 4 "device $1 not writable"
-	_getPartitionList $1 &>/dev/null || _log 4 "no partitions detected on $1"
+	#_getPartitionList $1 &>/dev/null || _log 4 "no partitions detected on $1"
 	return 0
 }
 
@@ -535,41 +544,6 @@ _findMounts() {
 	done
 }
 
-
-__findMounts() {
-	# arg 1 = whole disk device (eg /dev/sda)
-	# find the number of partitions
-	_devicePartitionList=$(_getPartitionList ${1}) || _log 4 "no device partition list"
-	# define how long findmnt will wait on a device until it gives up
-	_t=5000
-	# make into a bash array
-	declare -A _parts
-	for p in ${_devicePartitionList}; do
-		_device=/dev/${p}
-		findmnt --poll=mount --first-only --timeout=$_t $_device &>/dev/null &
-		_parts[$_device]=$!
-	done
-	for part in "${!_parts[@]}"; do
-		wait ${_parts[$part]}
-		if findmnt -S $part &>/dev/null; then
-			_parts[${part}]=true
-		else
-			_parts[${part}]=false
-		fi
-	done
-	for m in "${!_parts[@]}"; do
-		if [[ "${_parts[${m}]}" = "false" ]]; then
-			echo "$m ${yellow}unmounted${reset}"
-		else
-			findmnt -S ${m} -oSOURCE,SIZE,AVAIL,USED,USE%,TARGET
-		fi
-	done
-	# not how i would like this to work, but it works mostly
-	# the problem is if there is one non-mounting partition, it waits as long as
-	# the _timer is set since we wait on all findmnt -poll commands
-	# i don't know how better to optimize this now
-}
-
 _waitForMounts() {
 	# arg 1 = disk name (eg sda)
 	# find the partitions of a disk
@@ -602,25 +576,6 @@ _getPartitionList() {
 	fi
 }
 
-# spec
-# function findMounts
-# run against all partitions of whole disk
-# get partition list, put into assoc array as keys
-# for each, run findmnt
-# if mounted, insert the mountpoint as value for the key
-# if not mounted, run findmnt --poll in background and put pid as key
-# wait on the findmnt poll
-# check with findmnt once more
-# if nothing, replace the pid with UNKNOWN
-# pass back as a global VAR...
-
-# spec
-# function printMounts
-# call findMounts, use global var
-# for moounted, print fs + util info and whether empty or not
-# for unmounted, print fs
-# look for dsink partition tag
-
 _printDiskInfo() {
 	# arg1 = whole disk device file (ie /dev/sda)
 	# get device info and print it in human readable form
@@ -632,14 +587,21 @@ _printDiskInfo() {
 	echo -e "\n==============PHYSICAL:========================================"
 	lsblk -S -oNAME,SIZE,VENDOR,PTTYPE,PTUUID ${1}
 	echo -e "\n==============LOGICAL:========================================="
-	# TODO: this fails if there are no partitions!
-	lsblk -oNAME,SIZE,PARTLABEL,FSTYPE,UUID ${1} 
+	if _getPartitionList ${1} &>/dev/null; then
+		lsblk -oNAME,SIZE,PARTLABEL,FSTYPE,UUID ${1}
+	else
+		echo -e "\n NO PARTITIONS ON DISK"
+		# TODO this is broken...when a key has a partition table but no partitions
+		# it croaks
+	fi
 	echo -e "\n==============STATE:==========================================="
 	if _isDiskDsink "${1}"; then
 		_checkMount && _log 3 "dsink mounted...${1}...i think"
 		if _PTUUID=$(_getPTUUID ${1}); then
-			_log 1 "${1} is a dsink disk: ${_PTUUID}"
-			_log 1 "check catalog to confirm: dsink disk ${_PTUUID:0:3}"
+			_log 2 "${1} is a dsink disk: ${_PTUUID}"
+			if [ -d "${_dsinkCatalog}"/media/"${_PTUUID:0:3}" ]; then
+				_log 4 "disk id ${label}${_PTUUID:0:3}${reset} already exists in the media catalog!!"
+			fi
 			return 0
 		else
 			_log 2 "${1} looks like a dsink disk, but has no PTUUID"
@@ -649,10 +611,8 @@ _printDiskInfo() {
 	fi
 	_findMounts "${1}"
 	echo
-	#findmnt -S ${m} -oSOURCE,SIZE,AVAIL,USED,USE%,TARGET
 }
 	
-
 _irishExit() {
 	echo -ne "\r${yellow}WARNING${reset}: to retry, press R, to quit, press ENTER\n"
 	read -s -t 15 -n 1 _ANS
@@ -717,97 +677,6 @@ _findNewDisk() {
 	_newDiskDevice="/dev/${_newInsertedUsbDisk}"
 }
 
-_findInsertedUsbDisk() {
-	# to be run when new usb device needs to be found
-	# interactive prompt with user
-	# sequence requires prompt, user to manually insert device, discovery
-	# return 1 when no NEW devices found
-	# return 0 when new device is discovered (and confirmed)
-	# makes global the VAR _newInsertedUsbDisk
-	local _usbDisksBefore=($(ls /sys/block | grep ^sd))
-	local _usbDisksAfter
-	declare -g _newInsertedUsbDisk
-	local _attempts=3
-	local _timer=20
-	echo "insert new usb disk now, then press ENTER to proceed"
-	while [ ${_attempts} -gt 0 ]; do
-		echo "press ENTER to ${green}proceed${reset}, q to ${red}quit${reset}"
-		read -r -s -t ${_timer} -n 1 _KEY
-		if [[ ${_KEY} = "q" ]]; then
-			echo -e "\nuser exited"; exit 1
-		elif [[ ${_KEY} = "" ]]; then
-			echo -e "\nsearching for new drive now..."
-			#until [[ $(watch -n 0.1 -g ls /sys/block &>/dev/null) = 0 ]]; do
-			#	echo "waiting on new device"
-			#done
-			# the sleep here gives the kernel time to add the device
-			#sleep 2
-			# NOTE: SEAGATE SPINNING DISK TAKES A LONG TIME...10 seconds is needed!
-			_usbDisksAfter=($(ls /sys/block | grep ^sd))
-			_newDeviceCount=$((${#_usbDisksAfter[@]}-${#_usbDisksBefore[@]}))
-			if [[ $_newDeviceCount -eq 1 ]]; then
-				break
-			elif [[ $_newDeviceCount -eq 0 ]]; then
-				return 1
-			else
-				_log 4 "$_newDeviceCount new sd devices found, unexpected"
-			fi
-		fi
-	done
-	# find the new device by comparing before and after lists
-	for i in "${_usbDisksAfter[@]}"; do
-		skip=
-		for x in "${_usbDisksBefore[@]}"; do
-			[[ $i == $x ]] && { skip=1; break; }
-		done
-			[[ -n $skip ]] || _newInsertedUsbDisk=$i
-	done
-	_deviceFile="/dev/${_newInsertedUsbDisk}"
-	_isBlockDevice ${_deviceFile} || _log 4 "${_deviceFile} is not a block device"
-	_devicePartitionList=$(ls ${_deviceFile}? | tr '\n' ' ')
-	ls ${_deviceFile}?
-	#
-	# NEED TO make more robust...ie if there are no partitions
-	echo -e "\n==============PHYSICAL:========================================"
-	lsblk -S -oNAME,SIZE,VENDOR,PTTYPE,SERIAL,PTUUID ${_deviceFile}
-	echo -e "\n==============LOGICAL:========================================="
-	if [ -n "${_devicePartitionList}" ]; then
-		lsblk -oNAME,PARTLABEL,SIZE,FSTYPE,PARTUUID ${_devicePartitionList} 
-	else
-		echo "no partitions found on device"
-	fi
-	_mounts=0
-	echo -e "\n==============STATE:==========================================="
-	for i in ${_devicePartitionList}; do
-		if findmnt $i >/dev/null; then
-			_target=$(findmnt -n -o TARGET $i)
-			echo "$i is ${red}MOUNTED${reset} as ${_target}"
-			if ls -A1q "${_target}" | grep -q .; then
-				! echo "$i is ${red}NOT EMPTY${reset}"
-				echo "check the data...will not proceed"
-				_mounts=1
-			else
-				echo "$i is ${green}EMPTY${reset}"
-				echo "press ENTER to ${yellow}unmount${reset}, q to ${red}abort${reset}"
-				read -r -s -t ${_timer} -n 1 _UM
-				if [[ ${_UM} = "q" ]]; then
-					_log 4 "user exited...unmount $_target and retry"
-				elif [[ ${_UM} = "" ]]; then
-					sudo umount "${_target}" || _log 4 "could not unmount $_target"
-					_mounts=0
-				else
-					_mounts=1
-				fi
-			fi
-		fi
-	done
-	if [[ $_mounts -eq 0 ]]; then
-		return 0
-	else
-		return 1
-	fi
-}
-
 _unmount() {
 	# unmount fs, close luks device, notify device can be removed
 	# must be interactive to allow sudo command
@@ -835,7 +704,7 @@ _mount() {
 			sudo cryptsetup luksOpen ${_detectedDsinkDevice} dsink
 		fi
 		sudo mount /dev/mapper/dsink "${_dsinkMount}"
-		sudo chown jason:jason "${_dsinkMount}"
+		sudo chown -R jason:jason "${_dsinkMount}"
 	else
 		echo "insert a dsink device and try again"
 	fi
