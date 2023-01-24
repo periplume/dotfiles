@@ -106,6 +106,7 @@ dotfiles () {
     echo "workflow: ${green}'dotfiles add .bash_profile'${reset}  to add changes to .bash_profile to repo"
 		echo "          'dotfiles commit -m \"fixed such and such\"  to commit changes to repo"
 		echo "          'dotfiles push' to push changes to upstream repo"
+		echo "          'dotfiles save' to do it all at once"
 	elif [[ $1 = "save" ]]; then
 		_commitMsg="dotfi save by $USER on $HOSTNAME"
 		git --git-dir=$HOME/.dotfiles --work-tree=$HOME commit -a -m "${_commitMsg}"
