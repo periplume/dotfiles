@@ -31,8 +31,8 @@ fi
 # be quiet for godsake
 set bell-style visible
 
-# set up bash completions
-source /etc/profile.d/bash_completions.sh
+# set up bash completions (esp including pass)
+source /etc/profile.d/bash_completion.sh
 
 # bash history settings
 # append to the history file, don't overwrite it
@@ -134,8 +134,7 @@ alias dotfi=dotfiles
 # improve this with printf
 function dotfiles_status() {
 	local _localBranchName="master"
-	#local _remoteBranchName="origin/master"
-	local _remoteBranchName="origin/master"
+	local _remoteBranchName="master"
 	# the last hash of the local master branch
 	local _localRef=$(dotfi rev-parse master)
 
