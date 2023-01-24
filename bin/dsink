@@ -397,12 +397,17 @@ _format() {
 	_log 0 "disk id is ${_ptuuid:0:3}"
 	mkdir "${_dsinkCatalog}"/media/"${_ptuuid:0:3}"
 	touch "${_dsinkCatalog}"/media/"${_ptuuid:0:3}"/"${_ptuuid:3}"
-	_isDeviceReady "${_newDsinkDisk}"
+	_isDeviceReady "${_newDsinkDisk}" || _log 4 "${_newDsinkDevice} not ready"
 	# note: waiting on devices is tricky
 	# watch -n0.1 -be ls -l /dev/sda1
-	_isDeviceReady "${_newDsinkDisk}"1
+	_isDeviceReady "${_newDsinkDisk}"1 || _log 4 "${_newDsinkDisk}1 not ready"
+	_log 1 "encrypting ${_newDsinkDisk}1 now..."
 	_doEncrypt "${_newDsinkDisk}"1 && touch "${_dsinkCatalog}"/media/"${_ptuuid:0:3}"/encrypted
+	_log 1 "writing filesystem now..."
 	_doWriteFS && touch "${_dsinkCatalog}"/media/"${_ptuuid:0:3}"/ready
+	_mount && touch "${_dsinkCatalog}"/media/"${_ptuuid:0:3}"/mounted
+	_log 1 "dsink device is ready and mounted"
+	_log 1 "label new dsink device as ${label}${_ptuuid:0:3}${reset} now"
 }
 
 # disk media catalog
@@ -415,9 +420,9 @@ _format() {
 
 _doWriteFS() {
 	# no args...always write to the mapper device
-	until ls /dev/mapper/dsink 2>/dev/null; do
+	until ls /dev/mapper/dsink &>/dev/null; do
 		echo -n "waiting on /dev/mapper/dsink"
-		sleep 1
+		sleep 0.1
 	done
 	sudo mkfs.ext4 -q /dev/mapper/dsink -L dsink
 }
@@ -426,7 +431,7 @@ _doEncrypt() {
 	# arg 1 = partition (eg /dev/sda1)
 	# encrypt the device with luks, then open the device
 	sudo cryptsetup luksFormat --verify-passphrase --batch-mode ${1}
-	_log 1 "${1} encrypted, next open the device..."
+	_log 1 "${1} encrypted, opening the device..."
 	sudo cryptsetup luksOpen ${1} dsink
 }
 
@@ -457,7 +462,11 @@ _test() {
 _isBlockDevice() {
 	# arg1 = disk device to check (eg /dev/sda)
 	# return 0 if true, 1 if false
-	[ -b ${1:-null} ]
+	#[ -b ${1:-null} ]
+	until [ -b ${1:-null} ]; do
+		sleep 0.1
+		echo "waiting on block device ${1}"
+	done
 }
 
 _isDeviceReady() {
@@ -505,8 +514,10 @@ _isDiskDsink() {
 	# return 0 if true, 1 if disk is not a dsink device (must have 1 part labeled
 	# dsink)
 	if [[ $(lsblk -nS -oPTTYPE ${1}) == "gpt" ]]; then
-		if [[ $(lsblk -n -oPARTLABEL ${1}1) == "dsink" ]]; then
-			return 0
+		if _getPartitionList ${1} &>/dev/null; then
+			if [[ $(lsblk -n -oPARTLABEL ${1}1) == "dsink" ]]; then
+				return 0
+			fi
 		else
 			return 1
 		fi
@@ -608,6 +619,12 @@ _printDiskInfo() {
 			echo "require some override here"
 			return 1
 		fi
+	else
+		# disk is not a dsink device
+		if ! _getPartitionList ${1} &>/dev/null; then
+			_log 2 "disk is without partitions"
+			return 0
+		fi
 	fi
 	_findMounts "${1}"
 	echo
@@ -692,9 +709,9 @@ _mount() {
 	# check for mount first
 	_detectedDsinkDevice=
 	_checkMount && _log 4 "dsink device already mounted"
-	echo "insert dsink usb now"
+	#echo "insert dsink usb now"
 	if [ -e /dev/disk/by-partlabel/dsink ]; then
-		echo "dsink partition detected"
+		_log 1 "dsink partition detected"
 		_detectedDsinkDevice=$(readlink -f /dev/disk/by-partlabel/dsink)
 	else
 		echo "no dsink partition available"
@@ -708,6 +725,7 @@ _mount() {
 	else
 		echo "insert a dsink device and try again"
 	fi
+	# TODO this function needs reworking...
 }
 
 _checkMapperFile() {
