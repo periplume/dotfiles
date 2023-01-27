@@ -27,7 +27,7 @@ set -o pipefail
 
 # debugging and logging settings
 # script debug toggle (set to true to enable default global debugging)
-_DEBUG=true
+_DEBUG=false
 # silent mode for scripting (supresses stdout/stderr)
 _SILENT=false
 # logging facility (debug always goes here, unless)

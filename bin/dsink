@@ -404,7 +404,7 @@ _format() {
 	_log 1 "encrypting ${_newDsinkDisk}1 now..."
 	_doEncrypt "${_newDsinkDisk}"1 && touch "${_dsinkCatalog}"/media/"${_ptuuid:0:3}"/encrypted
 	_log 1 "writing filesystem now..."
-	_doWriteFS && touch "${_dsinkCatalog}"/media/"${_ptuuid:0:3}"/ready
+	_doMakeFS && touch "${_dsinkCatalog}"/media/"${_ptuuid:0:3}"/ready
 	_mount && touch "${_dsinkCatalog}"/media/"${_ptuuid:0:3}"/mounted
 	_log 1 "dsink device is ready and mounted"
 	_log 1 "label new dsink device as ${label}${_ptuuid:0:3}${reset} now"
@@ -418,7 +418,7 @@ _format() {
 # nickname
 # status (in-use, lost, corrupted, destroyed)
 
-_doWriteFS() {
+_doMakeFS() {
 	# no args...always write to the mapper device
 	until ls /dev/mapper/dsink &>/dev/null; do
 		echo -n "waiting on /dev/mapper/dsink"

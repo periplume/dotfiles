@@ -1,0 +1,361 @@
+#!/usr/bin/env bash
+# file: germ
+# source: https://github.com/periplume/dotfiles.git
+# author: jason@bloom.us
+# derived from a working copy of dsink
+
+# TO MY FUTURE SELF
+# WHOSE MEMORY WILL STRUGGLE TO REMEMBER HOW THIS THING WORKS
+# TOC MORE OR LESS:
+# SCRIPT AND SHELL SETTINGS
+# ENVIRONMENT SETTINGS
+# DEFAULTS
+# BASIC LOGGING FUNCTIONS
+# HELPER FUNCTIONS
+# PARAMETER PROCESSING FUNCTIONS
+# SUBCOMMAND FUNCTIONS AND SUBFUNCTIONS
+# MAIN ENTRY AND CONTROL
+
+# SCRIPT AND SHELL SETTINGS
+
+# bash makin-it-hard settings
+set -o errexit
+set -o nounset
+set -o pipefail
+
+# REQUIRED EXTERNAL COMMANDS
+_requiredCommands=(git gitdisk dsink)
+
+# ENVIRONMENT SETTINGS
+
+# debugging and logging settings
+# script debug toggle (set to true to enable default global debugging)
+_DEBUG=false
+# silent mode for scripting (supresses normal output)
+_SILENT=false
+# logging facility (debug always goes here, unless)
+_LOG=true
+
+# some color
+red=$(tput setaf 1)
+boldred=$(tput bold; tput setaf 1)
+green=$(tput setaf 2)
+cyan=$(tput setaf 6)
+yellow=$(tput setaf 3)
+prompt=$(tput setab 5; tput setaf 7)
+reset=$(tput sgr0)
+label=$(tput setab 7; tput setaf 0)
+
+# DEFAULT SETTINGS
+
+# store dsink state and logs in $HOME/dsink
+_germDirName=germ
+_germDir="$(dirname ~/.)/studio/${_germDirName}"
+_logFile="${_germDir}/germ.log"
+
+# global variables we use
+
+self=$(basename $0)
+
+_prompt() {
+	# hack to avoid fixing _log and include a PROMPT type
+	# TODO: add this idea into _log to keep the "universal" claim
+	echo -n "${prompt}USER${reset}: ${1} "
+}
+
+# LOGGING 
+
+_log() {
+	# global prompt and logging function
+	# consults _DEBUG _SILENT and _LOG for behavior
+	# TODO: add type for user PROMPT (ie USER interaction)
+	# TODO: try and optimize...many calls for each log event (although the use
+	# would never be bogged down since this is a single user system)
+	# levels:
+	# 0=debug eg: _log 0 "func(): value x was found and changed into x2"
+	# 1=info eg: _log 1 "main(): set parameters to x y and z"
+	# 2=warn eg: _log 2 "func(): doing y because the force flag was set"
+	# 3=error eg: _log 3 "main(): non-fatal error, will continue trying"
+	# 4=fatal eg: _log 4 "main(): fatal error, quitting"
+	# ARG1 = log level (can be overridden by setting _logLevelOverride)
+	# prints 1-3 no matter what, unless _LOG is false and/or _SILENT is true (and
+	# there are functions (eg _format) that should never be SILENT)
+	# set to 0 to force all logs into DEBUG pipeline
+	local _logLevelOverride=
+	local _logLevel=${_logLevelOverride:-$1}
+	local _logMessage="${@:2}"
+	local _canLog=false
+	# set timestamp for log message (unix seconds)
+	local _timeStamp=$(date +%s)
+	# define log levels and colors
+	# TODO: fix this...not using it as designed
+	declare -A _i=([0]=DEBUG [1]=INFO [2]=WARN [3]=ERROR [4]=FATAL)
+	declare -A _c=([0]=cyan [1]=green [2]=yellow [3]=red [4]=boldred)
+	local _level=${_i[${_logLevel}]}
+	local _color=${_c[${_logLevel}]}
+	# check if a logfile exists
+	# this could be a global VAR
+	[ -f "${_logFile}" ] && _canLog=true
+	# if debug is false and message level is 0, stop
+	[  ${_DEBUG} = false ] && [ ${_logLevel} = 0 ] && return
+	# if _LOG is true and _logFile exists, print to log
+	[ ${_LOG} = true ] && [ ${_canLog} = true ] && \
+		 printf "%s\n" "${_timeStamp} ${_level}: ${_logMessage}" >> "${_logFile}"
+	# if silent is true, don't print anything to the console and stop
+	# BUG HERE
+	# if SILENT is true and _log = 4, then we don't exit as expected on FATAL
+	# error
+	if [ ${_SILENT} = true ] && [ ${_logLevel} = 4 ]; then
+		exit 1
+	elif [ ${_SILENT} = true ]; then
+		return
+	fi
+	# if _SILENT is false, prettyPrint to console based on level
+	if [ ! ${_SILENT} = true ]; then
+		[ ${_DEBUG} = true ] && [ ${_logLevel} = 0 ]  && \
+			echo "${cyan}DEBUG${reset}: $self ${_logMessage}" && return
+		[ ${_logLevel} = 1 ] && \
+			echo "${green}INFO${reset}: $self ${_logMessage}" && return
+		[ ${_logLevel} = 2 ] && \
+			echo "${yellow}WARN${reset}: $self ${_logMessage}" && return
+		[ ${_logLevel} = 3 ] && \
+			echo "${red}ERROR${reset}: $self ${_logMessage}" && return
+		[ ${_logLevel} = 4 ] && \
+			echo "${boldred}FATAL${reset}: $self ${_logMessage}" && exit 1
+	fi
+}
+
+
+# HELPER FUNCTIONS
+
+_printUsage () {
+  cat << EOF
+
+usage: germ [OPTIONS] <command> [OPTIONS]
+
+options:
+ -h      print this usage info
+ -l      log commands and debug info to log file
+ -d      print debug info to stdout and/or log
+ -s      suppress all stdout/stderr
+ -v      print version number and exit
+
+commands:
+ add                 add a new germ entry to the database
+ edit                edit an existing germ entry
+ create              create a new germ git database
+
+for command specific usage, eg:
+$ germ help add
+
+EOF
+exit 0
+}
+
+_printInfo () {
+  cat << EOF
+
+germ takes simple notes and adds them to a git repo, keeping
+minimal metadata and organizing with tree objects
+
+EOF
+}
+
+# PARAMETER PROCESSING FUNCTIONS
+
+_getOpts () {
+	# check for global command flags and set VARS accordingly
+	local OPTIND
+	_log 0 "${FUNCNAME[0]}: positional parameters read: $*"
+	while getopts ":hsdlva:" flag ; do
+		_log 0 "${FUNCNAME[0]}: OPTIND=$OPTIND flag=$flag"
+		case ${flag} in 
+			h)
+				_printInfo ; _printUsage; exit 0
+				;;
+			a)
+				_germDirName=$OPTARG
+				[[ $OPTARG =~ add|edit|create|print ]] && _log 4 "$OPTARG not allowed"
+				_germDir="$(dirname ~/.)/studio/${_germDirName}"
+				_logFile="${_germDir}/germ.log"
+				_log 0 "${FUNCNAME[0]}: using alternative germ dir $_germDir"
+				;;
+ 	    s)
+				_log 0 "${FUNCNAME[0]}: enabling silent mode"
+ 	      _SILENT=true
+				;;
+			d)
+				_DEBUG=true
+				_log 0 "${FUNCNAME[0]}: enabled debug mode"
+				;;
+			l)
+				_LOG=true
+				_log 0 "${FUNCNAME[0]}: enabled log mode"
+				;;
+			v)
+				echo "${green}verion${reset}: beta"; exit 0
+				;;
+			?)
+				echo "${red}ERROR${reset}: invalid global option: -$OPTARG"; exit 1
+				;;
+		esac
+	done
+	shift $((OPTIND - 1))
+	# export a paired down parameter string flags and args read within this
+	# function will be discarded, leaving behind only that which the rest needs
+	export _workingParams=$*
+	_log 0 "${FUNCNAME[0]}: _LOG=${_LOG}"
+	_log 0 "${FUNCNAME[0]}: _SILENT=${_SILENT}"
+	_log 0 "${FUNCNAME[0]}: _DEBUG=${_DEBUG}"
+	return
+}
+
+_getSubcommand() {
+	# look for the first subcommand and set _subCommand accordingly
+	while ((${#})); do
+		_log 0 "${FUNCNAME[0]}: reading parameter '${1}'"
+		case $1 in
+			help)
+				_printInfo ; _printUsage; exit 0
+				;;
+			add)
+				_log 0 "${FUNCNAME[0]}: '$1' called, checking for $1 flags now"
+				_subCommand=$1
+				_getAddOpts
+				return
+				;;
+			edit)
+				_log 0 "_getSubcommand(): '$1' called, checking for $1 flags"
+				_subCommand=$1
+				_getEditOpts
+				return
+				;;
+			create)
+				_log 0 "_getSubcommand(): '$1' called, checking for $1 flags"
+				_subCommand=$1
+				_getCreateOptions
+				return
+				;;
+			*)
+				_log 4 "_getSubcommand(): '$1' is not a subcommand"
+				;;
+		esac
+		shift
+	done
+}	
+
+
+_isEnvSufficient() {
+	# check for required tools, report accordingly
+	local _sufficient=true
+	for _required in "${_requiredCommands}"; do
+		if ! hash "${_required}" 2>/dev/null; then
+			_log 3 "${FUNCNAME[0]}: ${_required} not found"
+			_sufficient=false
+		fi
+	done
+	[ ${_sufficient} = true ] && return 0 || return 1
+	# check for germ dir
+	if [ ! -d "${_germDir}" ]; then
+		_log 2 "${FUNCNAME[0]}: no ${_germDir}, creating now"
+ 		mkdir -p "${_germDir}" || _log 4 "${FUNCNAME[0]}: cannot make ${_germDir}"
+	fi
+}
+
+
+# SUBCOMMAND FUNCTIONS AND SUBFUNCTIONS
+_getAddOpts() {
+	# check for backup flags and args
+	local OPTIND=1
+	set -- ${_workingParams}
+	_log 0 "${FUNCNAME[0]}: positional parameters read: $*"
+	shift
+	while getopts ":i" flag "$@"; do
+		case ${flag} in
+			i)
+				# inline add (no editor invoked)
+				_log 0 "inline mode enabled"
+				_inline=true
+				;;
+			?)
+				_log 3 "${FUNCNAME[0]}: unknown flag -$OPTARG"; exit 1
+				;;
+		esac
+	done
+	shift $((OPTIND - 1))
+	export _workingParams=$*
+}
+
+_getEditOptions() {
+	local OPTIND=1
+	set -- ${_workingParams}
+	_log 0 "${FUNCNAME[0]}: positional parameters read: $*"
+	shift
+	while getopts ":f" flag "$@"; do
+		case ${flag} in
+			f)
+				_forceFormat=true
+				_log 1 "${FUNCNAME[0]}: force mode enabled"
+				;;
+			?)
+				_log 3 "${FUNCNAME[0]}: unknown flag -$OPTARG"; exit 1
+				;;
+		esac
+	done
+	shift $((OPTIND - 1))
+	export _workingParams=$*
+}
+
+_getCreateOptions() {
+	local OPTIND=1
+	set -- ${_workingParams}
+	_log 0 "${FUNCNAME[0]}: positional parameters read: $*"
+	shift
+	while getopts ":f" flag "$@"; do
+		case ${flag} in
+			f)
+				_forceFormat=true
+				_log 1 "${FUNCNAME[0]}: force mode enabled"
+				;;
+			?)
+				_log 3 "${FUNCNAME[0]}: unknown flag -$OPTARG"; exit 1
+				;;
+		esac
+	done
+	shift $((OPTIND - 1))
+	export _workingParams=$*
+}
+	
+
+# SUB COMMANDS
+_add() {
+	[ $_inline = "true" ] && echo $_workingParams
+}
+
+_create() {
+	echo "create $_workingParams"
+	cd $HOME/studio
+	if [ ${_DEBUG} = "true" ]; then
+		gitdisk -d create ${_germDirName}
+	else
+		gitdisk create ${_germDirName}
+	fi
+}
+
+main() {
+	# validate the environment first
+	_isEnvSufficient || _log 4 "${FUNCNAME[0]}: fulfill requirements before using"
+	# what are we trying to do (read all the positional parameters and set VARS)
+	_getOpts "${@}"
+	_log 0 "${FUNCNAME[0]}: parameters read: ${@}"
+	_log 0 "${FUNCNAME[0]}: paired-down parameters: $_workingParams"
+	_getSubcommand $_workingParams
+  # if run without arguments, run and print _status
+	[ -z "${_subCommand:-}" ] && _printUsage
+	_log 0 "${FUNCNAME[0]}: _subCommand: $_subCommand"
+	_log 0 "${FUNCNAME[0]}: remaining args: $_workingParams"
+	# do it
+	[ -n "${_subCommand:-}" ] && eval _"${_subCommand}"
+}
+main "${@}"
+
