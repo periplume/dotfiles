@@ -1,8 +1,15 @@
+[init]
+	defaultBranch = main
 [user]
 	name = Jason Lindemuth
 	email = jason@bloom.us
-[credential "https://github.com"]
-	useHttpPath = true
-[credential]
-    helper = "!f() { if [ \"$(uname)\" = Linux ]; then git credential-cache \"$@\"; else git credential-osxkeychain \"$@\"; fi; };f"
-
+[core]
+	filemode = false
+[includeif "gitdir:~/.gitdisk"]
+	path = /home/jason/.gitdisk/.gitconfig-gitdisk
+[log]
+	date = local
+[includeif "gitdir:/home/jason/studiodev"]
+	path = /home/jason/studiodev/.gitconfig-studio
+[includeif "gitdir:/home/jason/studiodev/germ/.gitdisk"]
+	path = /home/jason/studiodev/.gitconfig-studio

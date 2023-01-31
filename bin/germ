@@ -24,9 +24,13 @@ set -o nounset
 set -o pipefail
 
 # REQUIRED EXTERNAL COMMANDS
-_requiredCommands=(git gitdisk dsink)
+_requiredCommands=(git gitdisk dsink tig vipe)
+
 
 # ENVIRONMENT SETTINGS
+
+
+# BEHAVIOR
 
 # debugging and logging settings
 # script debug toggle (set to true to enable default global debugging)
@@ -36,9 +40,12 @@ _SILENT=false
 # logging facility (debug always goes here, unless)
 _LOG=true
 
+# OUTPUT
+
 # some color
 red=$(tput setaf 1)
-boldred=$(tput bold; tput setaf 1)
+#boldred=$(tput bold; tput setaf 1)
+boldred=$(tput setab 1 ; tput setaf 7)
 green=$(tput setaf 2)
 cyan=$(tput setaf 6)
 yellow=$(tput setaf 3)
@@ -48,14 +55,19 @@ label=$(tput setab 7; tput setaf 0)
 
 # DEFAULT SETTINGS
 
-# store dsink state and logs in $HOME/dsink
+# WORKING ENVIRONMENT
+_studioDirName=studiodev
+_studioDir="$(dirname ~/.)/${_studioDirName}"
+# GERM lives inside studio (the master container)
 _germDirName=germ
-_germDir="$(dirname ~/.)/studio/${_germDirName}"
+_germDir="${_studioDir}/${_germDirName}"
+_germGitDisk="${_germDir}/.gitdisk"
 _logFile="${_germDir}/germ.log"
 
 # global variables we use
-
 self=$(basename $0)
+# check if a logfile exists
+[ -f "${_logFile}" ] && _canLog=true || _canLog=false
 
 _prompt() {
 	# hack to avoid fixing _log and include a PROMPT type
@@ -84,18 +96,15 @@ _log() {
 	local _logLevelOverride=
 	local _logLevel=${_logLevelOverride:-$1}
 	local _logMessage="${@:2}"
-	local _canLog=false
+	#local _canLog
 	# set timestamp for log message (unix seconds)
 	local _timeStamp=$(date +%s)
 	# define log levels and colors
 	# TODO: fix this...not using it as designed
-	declare -A _i=([0]=DEBUG [1]=INFO [2]=WARN [3]=ERROR [4]=FATAL)
-	declare -A _c=([0]=cyan [1]=green [2]=yellow [3]=red [4]=boldred)
-	local _level=${_i[${_logLevel}]}
-	local _color=${_c[${_logLevel}]}
-	# check if a logfile exists
-	# this could be a global VAR
-	[ -f "${_logFile}" ] && _canLog=true
+	#declare -A _i=([0]=DEBUG [1]=INFO [2]=WARN [3]=ERROR [4]=FATAL)
+	#declare -A _c=([0]=cyan [1]=green [2]=yellow [3]=red [4]=boldred)
+	#local _level=${_i[${_logLevel}]}
+	#local _color=${_c[${_logLevel}]}
 	# if debug is false and message level is 0, stop
 	[  ${_DEBUG} = false ] && [ ${_logLevel} = 0 ] && return
 	# if _LOG is true and _logFile exists, print to log
@@ -236,6 +245,11 @@ _getSubcommand() {
 				_getCreateOptions
 				return
 				;;
+			list)
+				_log 0 "_getSubcommand: $1"
+				_subCommand=$1
+				return
+				;;
 			*)
 				_log 4 "_getSubcommand(): '$1' is not a subcommand"
 				;;
@@ -254,12 +268,13 @@ _isEnvSufficient() {
 			_sufficient=false
 		fi
 	done
-	[ ${_sufficient} = true ] && return 0 || return 1
-	# check for germ dir
-	if [ ! -d "${_germDir}" ]; then
-		_log 2 "${FUNCNAME[0]}: no ${_germDir}, creating now"
- 		mkdir -p "${_germDir}" || _log 4 "${FUNCNAME[0]}: cannot make ${_germDir}"
+	# check for germ dir (unless we are running create...this could use some
+	# cleaning for clarification)
+	if [ ! -d "${_germDir}" ] && [ ! ${_subCommand} = "create" ]; then
+		_log 3 "found no ${_germDir}; run 'germ create' first"
+		_sufficient=false
 	fi
+	[ ${_sufficient} = true ] && return 0 || return 1
 }
 
 
@@ -274,7 +289,7 @@ _getAddOpts() {
 		case ${flag} in
 			i)
 				# inline add (no editor invoked)
-				_log 0 "inline mode enabled"
+				_log 0 "enabled inline mode"
 				_inline=true
 				;;
 			?)
@@ -326,25 +341,194 @@ _getCreateOptions() {
 	export _workingParams=$*
 }
 	
-
+# germ add
+# two options
+#		inline (invoked by add -i)
+#			no tags allowed, naturally (bash interprets # as a comment)
+#			tags allowed if escaped ("add -i \#<tag> followed by the entry")
+#		buffer (add without args, calls an editor, the saved results comprise)
+#			
 # SUB COMMANDS
-_add() {
-	[ $_inline = "true" ] && echo $_workingParams
+
+__list() {
+	local _gitdir="${_germGitDisk}"
+	local _git="git --git-dir=${_gitdir}"
+  { ${_git} rev-list --objects --all
+  ${_git} rev-list --objects -g --no-walk --all
+  ${_git} rev-list --objects --no-walk \
+        $(${_git} fsck --unreachable |
+          grep '^unreachable commit' |
+          cut -d' ' -f3)
+}
 }
 
-_create() {
-	echo "create $_workingParams"
-	cd $HOME/studio
-	if [ ${_DEBUG} = "true" ]; then
-		gitdisk -d create ${_germDirName}
+_list() {
+	local _gitdir="${_germGitDisk}"
+	local _git="git --git-dir=${_gitdir}"
+	_log 1 "git 'ls-files -s'"
+	${_git} ls-files -s $_workingParams
+	# HACKED now
+	_log 1 "git 'ls-tree -r HEAD'"
+	${_git} ls-tree -r HEAD $_workingParams
+}
+
+# NAMESPACE construction
+# /a/		primary namespace key
+#				YEAR/MONTH/DAY/UNIX_SECONDS
+#				eg 2023/01/30/1675101655
+# /b/		workflow status
+#					new			:	added only
+#					read		: viewed at least once
+#					edited	: edited at least once
+#					other operations: move, rename, delete ?
+# thus, after adding one, then viewing it:
+# /b/add/
+# /b/read/1675101655
+# /b/edited/
+# each blob moves through namespaces following action on the blob
+#
+# /c/		source (a catalog of notebooks, etc, from whence the germ came)
+# /d/		first word catalog
+# /e/		tag catalog
+# /f/		heuristic
+#					matches /d and /e keywords from text and maps them
+#					matches text indicators (cf, re, eg, ie, todo, etc)
+#					matches operators (<,>,=,+,*,@,$...etc) [future]
+
+_add() {
+	# $_workingParams contains the string...we need to check if this is null as
+	# some characters (like #) will be stripped out by bash unless we escape it.
+	if [ ${_inline:-null} = "true" ]; then
+		_log 1 "found an inline string: '$_workingParams'"
+		[ -z "${_workingParams}" ] && _log 4 "'add -i' cannot contain an empty message"
 	else
-		gitdisk create ${_germDirName}
+		_message=$(vipe)
 	fi
+	echo $_message
+	_workingParams="${_message}"
+	# set up primary key namespace mapping
+	local _key=$(date +%s)
+	local _keyPath="a/$(date +%Y)/$(date +%m)/$(date +%d)/${_key}"
+	# set up git command
+	local _git="git --git-dir=${_germGitDisk}"
+	# ADD the BLOB...get the BLOB id
+	_blobID=$(${_git} hash-object --stdin -w <<< "${_workingParams}")
+	_log 1 "added the blob to the object store"
+	# READ the blob back...first confirmation
+	# plus we will parse the blob now to build the metadata view
+	readarray -t _blobArray < <(${_git} cat-file -p ${_blobID})
+	_log 1 "found ${#_blobArray[@]} line[s] in the new blob"
+	# testing multiple lines
+	#_log 1 "added a new line (for testing purposes)"
+	#_blobArray+=("#germ how to catch a hash in the first word")
+	#_log 1 "found ${#_blobArray[@]} line[s] in the new blob"
+	# UPDATES the index (ie maps blob to namespace...hashed date - key is seconds)
+	${_git} update-index --add --cacheinfo 10064 $_blobID ${_keyPath}
+	_log 1 "added ${_blobID} as ${_keyPath}"
+	# map first word on first line to d/
+	_firstWord=${_blobArray[0]%% *}
+	${_git} update-index --add --cacheinfo 10064 $_blobID d/${_firstWord}/${_key}
+	_log 1 "mapped ${_blobID:0:5} as ${_key} in d/${_firstWord}"
+	# check for tags on first line
+	for _line in "${_blobArray[@]}"; do
+		if [ -z "${_line:-}" ]; then
+			continue	# ignore blank lines
+		elif [ "${_line:0:1}" = "#" ]; then
+			_tag=${_line%% *}
+ 			_log 0 "found tag ${_tag:1}"
+			${_git} update-index --add --cacheinfo 10064 $_blobID e/${_tag:1}/${_key}
+			_log 1 "mapped ${_blobID:0:5} as ${_key} in tag space e/${_tag:1}"
+		fi
+	done
+	# next create a tree object from the index
+	_tree=$(${_git} write-tree)
+	_log 1 "created tree object ${_tree}"
+	# next make sure there is a parent
+	if ${_git} rev-list --max-parents=0 HEAD &>/dev/null; then
+		_parent=$(${_git} rev-list -n1 --all HEAD)
+		_log 1 "found a parent: ${_parent}"
+		_commit=$(${_git} commit-tree $_tree -p $_parent -m "$_workingParams")
+	else
+		_log 1 "found no parent"
+		_commit=$(${_git} commit-tree $_tree -m "[genesis] ${_workingParams}")
+	fi
+	_log 1 "created the commit object ${_commit}"
+	${_git} update-ref HEAD "${_commit}"
+	_log 1 "updated the HEAD reference"
+	return 0
+}
+
+# git ls-files is the correct way to navigate the git tree we are creating here
+
+
+# WORKING ENVIRONMENT
+_studioDirName=studiodev
+_studioDir="$(dirname ~/.)/${_studioDirName}"
+# GERM lives inside studio (the master container)
+_germDirName=germ
+_germDir="${_studioDir}/${_germDirName}"
+_germGitDisk="${_germDir}/.gitdisk"
+_logFile="${_germDir}/germ.log"
+
+_create() {
+	local _gitUserName=$(git config --global --get user.name)
+	local _gitUserEmail=$(git config --global --get user.email)
+	local _gitDisk=${_germGitDisk}
+  trap _irishExit SIGINT
+	_prompt "enter studio name ["${_studioDirName}"] "
+	read _studioName
+	[ -z ${_studioName} ] || _studioDirName="${_studioName}"
+	_prompt "enter studio path ["${_studioDir}"] "
+	read _studioPath
+	[ -z ${_studioPath} ] || _studioDir="${_studioPath}"
+	_prompt "enter germ name ["${_germDirName}"] "
+	read _germName
+	[ -z ${_germName} ] || _germDirName="${_germName}"
+	_prompt "enter germ gitdisk name ["${_germGitDisk}"] "
+	read _germGit
+	[ -z ${_germGit} ] || _germGitDisk="${_germGit}"
+	# ask if user prefers a different username and email
+	_prompt "enter preferred username [${_gitUserName}] "	
+	read _userName
+	[ -z ${_userName} ] && _userName="${_gitUserName}"
+	_prompt "enter preferred email [${_gitUserEmail}] "	
+	read _userEmail
+	[ -z ${_userEmail} ] && _userEmail="${_gitUserEmail}"
+	_log 1 "${_studioDirName}"
+	_log 1 "${_studioDir}"
+	_log 1 "${_germDir}"
+	_log 1 "${_germGitDisk}"
+	_log 1 "${_userName}"
+	_log 1 "${_userEmail}"
+	[ ! -d "${_germDir}" ] && mkdir -p "${_germDir}"
+	if [ ${_DEBUG} = "true" ]; then
+		gitdisk -d create -b ${_germGitDisk}
+	else
+		gitdisk create -b ${_germGitDisk}
+	fi
+  git config --global includeif.gitdir:"${_studioDir}".path "${_studioDir}/.gitconfig-studio"
+  git config --global includeif.gitdir:"${_germGitDisk}".path "${_studioDir}/.gitconfig-studio"
+	git config --file="${_studioDir}"/.gitconfig-studio user.name "${_userName}"
+	git config --file="${_studioDir}"/.gitconfig-studio user.email "${_userEmail}"
+
+# we also will need to use show.untrackedfiles = no  ??
+# git config --global log.date local  ... or check that these are already set in
+# global
+
+}
+
+
+_irishExit() {
+  echo -ne "\r${yellow}WARNING${reset}: ctrl-c detected; to resume, press R, to quit, press ENTER\n"
+  read -s -t 15 -n 1 _ANS
+  if [[ ${_ANS:-n} = 'R' ]]; then
+    return
+  else
+    _log 4 "user requested exit with ctrl-c"
+  fi
 }
 
 main() {
-	# validate the environment first
-	_isEnvSufficient || _log 4 "${FUNCNAME[0]}: fulfill requirements before using"
 	# what are we trying to do (read all the positional parameters and set VARS)
 	_getOpts "${@}"
 	_log 0 "${FUNCNAME[0]}: parameters read: ${@}"
@@ -354,6 +538,8 @@ main() {
 	[ -z "${_subCommand:-}" ] && _printUsage
 	_log 0 "${FUNCNAME[0]}: _subCommand: $_subCommand"
 	_log 0 "${FUNCNAME[0]}: remaining args: $_workingParams"
+	# validate the environment first
+	_isEnvSufficient || _log 4 "cannot run until these problems are resolved"
 	# do it
 	[ -n "${_subCommand:-}" ] && eval _"${_subCommand}"
 }

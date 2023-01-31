@@ -49,6 +49,12 @@ HISTTIMEFORMAT="%s %F %T "
 # update the values of LINES and COLUMNS.
 shopt -s checkwinsize
 
+# stop gpg-agent from using the gnome popup
+#GPG_TTY=$(tty)
+#export GPG_TTY
+export PINENTRY_USER_DATA="USE_CURSES=1"
+
+
 # set up color variable shortcuts
 # TODO fix this up with better names
 black=$(tput setaf 0)
