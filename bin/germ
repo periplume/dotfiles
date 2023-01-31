@@ -59,7 +59,7 @@ label=$(tput setab 7; tput setaf 0)
 _studioDirName=studiodev
 _studioDir="$(dirname ~/.)/${_studioDirName}"
 # GERM lives inside studio (the master container)
-_germDirName=germ
+_germDirName=germ1
 _germDir="${_studioDir}/${_germDirName}"
 _germGitDisk="${_germDir}/.gitdisk"
 _logFile="${_germDir}/germ.log"
@@ -122,15 +122,15 @@ _log() {
 	# if _SILENT is false, prettyPrint to console based on level
 	if [ ! ${_SILENT} = true ]; then
 		[ ${_DEBUG} = true ] && [ ${_logLevel} = 0 ]  && \
-			echo "${cyan}DEBUG${reset}: $self ${_logMessage}" && return
+			echo "${cyan}DEBUG${reset}: $self: ${_logMessage}" && return
 		[ ${_logLevel} = 1 ] && \
-			echo "${green}INFO${reset}: $self ${_logMessage}" && return
+			echo "${green}INFO${reset}: $self: ${_logMessage}" && return
 		[ ${_logLevel} = 2 ] && \
-			echo "${yellow}WARN${reset}: $self ${_logMessage}" && return
+			echo "${yellow}WARN${reset}: $self: ${_logMessage}" && return
 		[ ${_logLevel} = 3 ] && \
-			echo "${red}ERROR${reset}: $self ${_logMessage}" && return
+			echo "${red}ERROR${reset}: $self: ${_logMessage}" && return
 		[ ${_logLevel} = 4 ] && \
-			echo "${boldred}FATAL${reset}: $self ${_logMessage}" && exit 1
+			echo "${boldred}FATAL${reset}: $self: ${_logMessage}" && exit 1
 	fi
 }
 
@@ -250,6 +250,11 @@ _getSubcommand() {
 				_subCommand=$1
 				return
 				;;
+			status)
+				_log 0 "_getSubcommand: $1"
+				_subCommand=$1
+				return
+				;;
 			*)
 				_log 4 "_getSubcommand(): '$1' is not a subcommand"
 				;;
@@ -362,15 +367,77 @@ __list() {
 }
 }
 
-_list() {
+_status() {
 	local _gitdir="${_germGitDisk}"
 	local _git="git --git-dir=${_gitdir}"
+	_log 1 "studio dir name: ${_studioDirName}"
+	_log 1 "studio path: ${_studioDir}"
+	_log 1 "germ path: ${_germDir}"
+	_log 1 "germ gitdisk: ${_germGitDisk}"
+	_log 1 "'git fsck'"
+	${_git} fsck
+	#_log 1 "'git reflog'"
+	#${_git} reflog
+	_log 1 "'git log --graph --reflog'"
+	${_git} log --graph --reflog
+	
+}
+
+_list() {
+	local _gitdir="${_germGitDisk}"
+	local _git="git --git-dir=${_germGitDisk}"
 	_log 1 "git 'ls-files -s'"
 	${_git} ls-files -s $_workingParams
 	# HACKED now
 	_log 1 "git 'ls-tree -r HEAD'"
-	${_git} ls-tree -r HEAD $_workingParams
+	${_git} ls-tree -r HEAD 
 }
+
+# TODO
+# add virtual tracking...pointers to the last file entered
+#
+# /j/last		-->
+#
+# /j
+# /j/new.0	-->	a/2023/01/30/1675144729
+# /j/new.1	-->	and so on...an always flowing list, always updated
+#
+# /j/edited.0	--> d/jkl/1675134323
+# /j/edited.1	--> and so on...adjust the depth here based on speed and screen
+# space and use case 
+#
+# can we use the index but not commit all its noise?
+# use it to track changes to an add object operation
+# then remove it before the commit
+#
+# TODO
+# define the tree index namespace and its use
+# a/		primary key, hash of date, unix seconds key
+# b/		workflow status
+# c/		source
+# d/		first word catalog
+# e/		tag catalog
+# f/
+# g/
+# h/
+# i/
+# j/
+# k/
+# l/
+# m/
+# n/
+# o/
+# p/
+# q/
+# r/
+# s/
+# t/
+# u/
+# v/
+# w/
+# x/
+# y/
+# z/
 
 # NAMESPACE construction
 # /a/		primary namespace key
@@ -395,6 +462,15 @@ _list() {
 #					matches text indicators (cf, re, eg, ie, todo, etc)
 #					matches operators (<,>,=,+,*,@,$...etc) [future]
 
+# TODO
+# make writes more atomic?
+# 		j/atomic/last.key
+# use j/atomic/key.add
+# 		j/atomic/key.map
+#			j/atomic/key.tree
+#			j/atomic/key.commit
+# check for consistency each time
+
 _add() {
 	# $_workingParams contains the string...we need to check if this is null as
 	# some characters (like #) will be stripped out by bash unless we escape it.
@@ -403,9 +479,9 @@ _add() {
 		[ -z "${_workingParams}" ] && _log 4 "'add -i' cannot contain an empty message"
 	else
 		_message=$(vipe)
+		_log 0 "vipe-produced entry: $_message"
+		_workingParams="${_message}"
 	fi
-	echo $_message
-	_workingParams="${_message}"
 	# set up primary key namespace mapping
 	local _key=$(date +%s)
 	local _keyPath="a/$(date +%Y)/$(date +%m)/$(date +%d)/${_key}"
@@ -434,8 +510,9 @@ _add() {
 		if [ -z "${_line:-}" ]; then
 			continue	# ignore blank lines
 		elif [ "${_line:0:1}" = "#" ]; then
+			# BUG Here...must not set tag to null string if there is no tag
 			_tag=${_line%% *}
- 			_log 0 "found tag ${_tag:1}"
+ 			_log 0 "found tag '${_tag:1}'"
 			${_git} update-index --add --cacheinfo 10064 $_blobID e/${_tag:1}/${_key}
 			_log 1 "mapped ${_blobID:0:5} as ${_key} in tag space e/${_tag:1}"
 		fi
@@ -457,18 +534,7 @@ _add() {
 	_log 1 "updated the HEAD reference"
 	return 0
 }
-
 # git ls-files is the correct way to navigate the git tree we are creating here
-
-
-# WORKING ENVIRONMENT
-_studioDirName=studiodev
-_studioDir="$(dirname ~/.)/${_studioDirName}"
-# GERM lives inside studio (the master container)
-_germDirName=germ
-_germDir="${_studioDir}/${_germDirName}"
-_germGitDisk="${_germDir}/.gitdisk"
-_logFile="${_germDir}/germ.log"
 
 _create() {
 	local _gitUserName=$(git config --global --get user.name)
@@ -487,19 +553,18 @@ _create() {
 	_prompt "enter germ gitdisk name ["${_germGitDisk}"] "
 	read _germGit
 	[ -z ${_germGit} ] || _germGitDisk="${_germGit}"
-	# ask if user prefers a different username and email
 	_prompt "enter preferred username [${_gitUserName}] "	
 	read _userName
 	[ -z ${_userName} ] && _userName="${_gitUserName}"
 	_prompt "enter preferred email [${_gitUserEmail}] "	
 	read _userEmail
 	[ -z ${_userEmail} ] && _userEmail="${_gitUserEmail}"
-	_log 1 "${_studioDirName}"
-	_log 1 "${_studioDir}"
-	_log 1 "${_germDir}"
-	_log 1 "${_germGitDisk}"
-	_log 1 "${_userName}"
-	_log 1 "${_userEmail}"
+	_log 0 "studio dir name: ${_studioDirName}"
+	_log 0 "studio path: ${_studioDir}"
+	_log 0 "germ path: ${_germDir}"
+	_log 0 "germ gitdisk: ${_germGitDisk}"
+	_log 0 "germ user name: ${_userName}"
+	_log 0 "germ user email: ${_userEmail}"
 	[ ! -d "${_germDir}" ] && mkdir -p "${_germDir}"
 	if [ ${_DEBUG} = "true" ]; then
 		gitdisk -d create -b ${_germGitDisk}
@@ -517,6 +582,52 @@ _create() {
 
 }
 
+# TODO  TODO  TODO
+# BIG BUG
+# if the add function doesn't complete, something breaks
+#
+# DEBUG: germ: vipe-produced entry: germ
+# 
+# the filter that looks for tags
+# 
+# #
+# 
+# can't be fooled
+# INFO: germ: added the blob to the object store
+# INFO: germ: found 7 line[s] in the new blob
+# 
+# INFO: germ: added ad0e593e48fdbe466889e7aa1c6edcdba8937132 as a/2023/01/30/1675145248
+# INFO: germ: mapped ad0e5 as 1675145248 in d/germ
+# DEBUG: germ: found tag ''
+# error: Invalid path 'e//1675145248'
+# fatal: git update-index: --cacheinfo cannot add e//1675145248
+# jason delphi ~ d=o $ germ -d list
+# <this returned nothing>
+#
+# where as normally, we do this:
+# INFO: germ: created tree object b4a8e649fdde149141ed8d327f25c414e680cf48
+# INFO: germ: found a parent: 7c3294b2649623223a8cc83948c05a298d37dd5a
+# INFO: germ: created the commit object f32863ce9c8c55a3db7cb60343092cc18ac547fa
+# INFO: germ: updated the HEAD reference
+# 
+# see that the final tree, locate parent, commit, and move HEAD
+# did not complete...leaving the database in an inconsistent state
+#
+#
+# note, the code tried to set a tag to '', then tried to update the index with
+# an invalid path e//167...
+# which left the add() function incomplete
+# need to add traps to the write to make it more safe
+# need also a way to rebuild the correct manhole interface
+# right now this instance is broken...and i need to figure out the git status
+# and the commands to recover and build them into a repair function for when a
+# write doesn't complete and leaves the index wonky.
+#
+#
+# the blob wrote, recorded in a/ and d/germ as bb10a
+# but no new tree or commit objects
+# so we should be able to find blobs not referenced in the commit
+# 
 
 _irishExit() {
   echo -ne "\r${yellow}WARNING${reset}: ctrl-c detected; to resume, press R, to quit, press ENTER\n"
