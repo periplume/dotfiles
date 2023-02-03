@@ -2,23 +2,8 @@
 # file: germ
 # source: https://github.com/periplume/dotfiles.git
 # author: jason@bloom.us
-# derived from a working copy of dsink
-
-# TO MY FUTURE SELF
-# WHOSE MEMORY WILL STRUGGLE TO REMEMBER HOW THIS THING WORKS
-# TOC MORE OR LESS:
-# SCRIPT AND SHELL SETTINGS
-# ENVIRONMENT SETTINGS
-# DEFAULTS
-# BASIC LOGGING FUNCTIONS
-# HELPER FUNCTIONS
-# PARAMETER PROCESSING FUNCTIONS
-# SUBCOMMAND FUNCTIONS AND SUBFUNCTIONS
-# MAIN ENTRY AND CONTROL
 
 # SCRIPT AND SHELL SETTINGS
-
-# bash makin-it-hard settings
 set -o errexit
 set -o nounset
 set -o pipefail
@@ -26,9 +11,24 @@ set -o pipefail
 # REQUIRED EXTERNAL COMMANDS
 _requiredCommands=(git gitdisk dsink tig vipe)
 
-
 # ENVIRONMENT SETTINGS
 
+# WORKING ENVIRONMENT
+_studioDirName=studiodev
+_studioDir="$(dirname ~/.)/${_studioDirName}"
+# GERM lives inside studio (into which it is designed to publish)
+_germDirName=germ
+_germDir="${_studioDir}/${_germDirName}"
+_germGitDisk="${_germDir}/.gitdisk"
+_logFile="${_germDir}/germ.log"
+# SET GIT COMMANDS for convenience and consistency
+#_git="git --git-dir=${_germGitDisk} --work-tree=${_germDir}"
+_git="git --git-dir=${_germGitDisk}"
+
+# other important things
+self=$(basename $0)
+# check if a logfile exists
+[[ -f "${_logFile}" ]] && _canLog=true
 
 # BEHAVIOR
 
@@ -38,13 +38,12 @@ _DEBUG=false
 # silent mode for scripting (supresses normal output)
 _SILENT=false
 # logging facility (debug always goes here, unless)
-_LOG=true
+_LOG=false
 
 # OUTPUT
 
 # some color
 red=$(tput setaf 1)
-#boldred=$(tput bold; tput setaf 1)
 boldred=$(tput setab 1 ; tput setaf 7)
 green=$(tput setaf 2)
 cyan=$(tput setaf 6)
@@ -52,25 +51,6 @@ yellow=$(tput setaf 3)
 prompt=$(tput setab 5; tput setaf 7)
 reset=$(tput sgr0)
 label=$(tput setab 7; tput setaf 0)
-
-# DEFAULT SETTINGS
-
-# WORKING ENVIRONMENT
-_studioDirName=studiodev
-_studioDir="$(dirname ~/.)/${_studioDirName}"
-# GERM lives inside studio (the master container)
-_germDirName=germ
-_germDir="${_studioDir}/${_germDirName}"
-_germGitDisk="${_germDir}/.gitdisk"
-_logFile="${_germDir}/germ.log"
-# SET GIT COMMANDS for convenience and consistency
-_git="git --git-dir=${_germGitDisk} --work-tree=${_germDir}"
-# NOTE, future use may involve setting work-tree differently or locally
-
-# global variables we use
-self=$(basename $0)
-# check if a logfile exists
-[ -f "${_logFile}" ] && _canLog=true || _canLog=false
 
 _prompt() {
 	# hack to avoid fixing _log and include a PROMPT type
@@ -81,7 +61,7 @@ _prompt() {
 # LOGGING 
 
 _log() {
-	# global prompt and logging function
+	# overly complex global prompt and logging function
 	# consults _DEBUG _SILENT and _LOG for behavior
 	# TODO: add type for user PROMPT (ie USER interaction)
 	# TODO: try and optimize...many calls for each log event (although the use
@@ -99,19 +79,18 @@ _log() {
 	local _logLevelOverride=
 	local _logLevel=${_logLevelOverride:-$1}
 	local _logMessage="${@:2}"
-	#local _canLog
 	# set timestamp for log message (unix seconds)
 	local _timeStamp=$(date +%s)
 	# define log levels and colors
 	# TODO: fix this...not using it as designed
-	#declare -A _i=([0]=DEBUG [1]=INFO [2]=WARN [3]=ERROR [4]=FATAL)
-	#declare -A _c=([0]=cyan [1]=green [2]=yellow [3]=red [4]=boldred)
-	#local _level=${_i[${_logLevel}]}
-	#local _color=${_c[${_logLevel}]}
+	declare -A _i=([0]=DEBUG [1]=INFO [2]=WARN [3]=ERROR [4]=FATAL)
+	declare -A _c=([0]=cyan [1]=green [2]=yellow [3]=red [4]=boldred)
+	local _level=${_i[${_logLevel}]}
+	local _color=${_c[${_logLevel}]}
 	# if debug is false and message level is 0, stop
 	[  ${_DEBUG} = false ] && [ ${_logLevel} = 0 ] && return
 	# if _LOG is true and _logFile exists, print to log
-	[ ${_LOG} = true ] && [ ${_canLog} = true ] && \
+	[ ${_LOG} = true ] && [ ${_canLog:-false} = true ] && \
 		 printf "%s\n" "${_timeStamp} ${_level}: ${_logMessage}" >> "${_logFile}"
 	# if silent is true, don't print anything to the console and stop
 	# BUG HERE
@@ -161,7 +140,6 @@ for command specific usage, eg:
 $ germ help add
 
 EOF
-exit 0
 }
 
 _printInfo () {
@@ -169,6 +147,18 @@ _printInfo () {
 
 germ takes simple notes and adds them to a git repo, keeping
 minimal metadata and organizing with tree objects
+
+EOF
+}
+
+_printShellUsage() {
+	cat << EOF
+
+ add        add a new germ entry
+ list       list the tag catalog
+ status     show germ health
+ stop       exit studio
+ help       print this message
 
 EOF
 }
@@ -258,14 +248,19 @@ _getSubcommand() {
 				_subCommand=$1
 				return
 				;;
+			recover)
+				_log 0 "_getSubcommand: $1"
+				_subCommand=$1
+				return
+				;;
 			*)
-				_log 4 "_getSubcommand(): '$1' is not a subcommand"
+				_log 3 "${FUNCNAME}: '${1}' is not a subcommand"
+				return 1
 				;;
 		esac
 		shift
 	done
 }	
-
 
 _isEnvSufficient() {
 	# check for required tools, report accordingly
@@ -284,7 +279,6 @@ _isEnvSufficient() {
 	fi
 	[ ${_sufficient} = true ] && return 0 || return 1
 }
-
 
 # SUBCOMMAND FUNCTIONS AND SUBFUNCTIONS
 _getAddOpts() {
@@ -370,38 +364,99 @@ __list() {
 }
 }
 
-_status() {
-	#local _gitdir="${_germGitDisk}"
-	#local _git="git --git-dir=${_gitdir}"
+_showStatus() {
+	# arg 1 = level [optional]
+	# 0 = brief [default]
+	# 1 = verbose
+	local _level=${1:-0}
+	_log 1 "$(${_git} --version)"
 	_log 1 "studio dir name: ${_studioDirName}"
 	_log 1 "studio path: ${_studioDir}"
 	_log 1 "germ path: ${_germDir}"
 	_log 1 "germ gitdisk: ${_germGitDisk}"
-	_log 1 "'git fsck --full'"
+	_log 0 "'git count-objects --human'"
+	_objectCount=$(${_git} count-objects --human)
+	_log 1 "germ object count: ${_objectCount}"
+	_lastCommit=$(${_git} rev-parse HEAD)
+	_log 1 "last commit: ${_lastCommit}"
+	_lastDate=$(${_git} --no-pager log -1 --format="%ad (%ah)")
+	_log 1 "date of last commit: ${_lastDate}"
+	_log 0 "${FUNCNAME[0]}: _LOG=${_LOG}"
+	_log 0 "${FUNCNAME[0]}: _SILENT=${_SILENT}"
+	_log 0 "${FUNCNAME[0]}: _DEBUG=${_DEBUG}"
+}
+	
+
+
+
+_status() {
+	_log 1 "git version: $(${_git} --version)"
+	_log 1 "studio dir name: ${_studioDirName}"
+	_log 1 "studio path: ${_studioDir}"
+	_log 1 "germ path: ${_germDir}"
+	_log 1 "germ gitdisk: ${_germGitDisk}"
+	${_git} commit-graph verify
+	[ $? = 0 ] || _log 3 "'git commit-graph verify' returned an error"
+	_log 1 "'git rev-parse --show-object-format HEAD'"
+	${_git} rev-parse --show-object-format HEAD
+	_log 1 "'git ls-tree -r HEAD' (ie what is in the last commit):"
+	${_git} ls-tree -r HEAD
+	_log 1 "'git ls-files --stage' (ie what is in the index):"
+	${_git} ls-files --stage
+	_log 1 "'git count-objects --human'"
+	${_git} count-objects --human
+	_log 1 "count all git objects:"
+	_log 0 "'git cat-file --batch-all-objects --batch-check | wc -l'"
+	${_git} cat-file --batch-all-objects --batch-check | wc -l
+	_log 1 "how many total objects:"
+	_log 0 "'find ${_germGitDisk}/objects -type f | wc -l':" 
+	find ${_germGitDisk}/objects -type f | wc -l
+	_log 1 "git cat-file -p main^{tree}' (ie show tree namespace):"
+	${_git} cat-file -p main^{tree}
+	_log 1 "'git fsck --full --verbose'"
+	#${_git} fsck --full --verbose
 	${_git} fsck --full
+	_gitFsckExit=$?
+	_log 1 "git fsck exit status: '${_gitFsckExit}'"
+	local _gitDiff="${_git} --no-pager diff --cached --summary HEAD"
+	local _lastCommit=$(${_git} rev-parse HEAD)
+	_inconsistentCount=$(${_gitDiff} | wc -l)
+	_lostMaps=$(${_gitDiff} | cut -f5 -d' ')
+	_log 1 "last commit id: ${_lastCommit}"
+	_log 1 "inconsistent count: ${_inconsistentCount}"
+	_log 1 "uncommitted files: ${_lostMaps}"
 	#_log 1 "'git fsck --unreachable'"
 	#${_git} fsck --unreachable
 	#_log 1 "'git reflog'"
 	#${_git} reflog
 	#_log 1 "'git log --graph --reflog'"
-	${_git} log --graph --reflog
+	#${_git} log --graph --reflog
 	# the above runs into a pager and is quite nice and useful already
 	# the below is someone else's custom formatting
-# $ git config --global alias.graph \
-#  "log --graph --all --format='%h %s%n        (%an, %ar)%d' --abbrev-commit"
-	_log 2 "check out the 'git gc' command...does it leave stats?"
-	_isIndexClean || _log 3 "INDEX IS DIRTY" && _log 1 "INDEX CLEAN"
+	_isIndexClean || _log 3 "INDEX IS INCONSISTENT"
 	#_readBlob bb10
 	#_recover
 }
 
+
+# TODO log output formatting
+# $ git config --global alias.graph \
+#  "log --graph --all --format='%h %s%n        (%an, %ar)%d' --abbrev-commit"
+
 _list() {
-	_log 1 "git 'ls-files -s'"
-	${_git} ls-files -s $_workingParams
 	# HACKED now
 	_log 1 "git 'ls-tree -r HEAD'"
 	${_git} ls-tree -r HEAD 
 }
+
+_listTags() {
+	${_git} ls-files t/*/count.*
+}
+
+_listKeys() {
+	${_git} ls-files a/
+} 
+	
 
 # TODO
 # add virtual tracking...pointers to the last file entered
@@ -504,30 +559,49 @@ _readBlob() {
 # INDEX MANIPULATION
 
 _mapPrimaryKey() {
-	# arg 1 = primary key (unix seconds)
+	# arg 1 = primary key
 	# arg 2 = blobID
 	# assumes global _blobArray
 	# TODO add some sanity checks here
-	local _key=$1
+	local _keyPath=$1
 	local _blobID=$2
-	local year=$(date -d @${1} +"%Y")
-	local month=$(date -d @${1} +"%m")
-	local day=$(date -d @${1} +"%d")
-	local _keyPath="a/$year/$month/$day/${_key}"
 	# UPDATE the index (ie maps blob to namespace...hashed date - key is seconds)
 	${_git} update-index --add --cacheinfo 10064,$_blobID,${_keyPath}
-	_log 1 "added ${_blobID} as ${_keyPath}"
+	_log 1 "added ${_blobID:0:5} as ${_keyPath}"
 }
 
 _mapBlob() {
+	# TODO change this function to be a blob namespace mapper
+	# ie take a blobID, create the namespace path
+	# eg t/<tag>/$BLOBID/[properties i can now manipulate]
 	# arg 1 = path
 	# arg 2 = blobID
 	[ $# -eq 0 ] && return 1
 	local _path="${1}"
 	local _blobID=${2}
-	${_git} update-index --add --cacheinfo 10064,$_blobID,"${_path}"
+	_emptyBlob=$(${_git} hash-object -w --stdin </dev/null)
+	_log 0 "empty blob hash: $_emptyBlob"
+	_path="z/${_blobID}/self"
+	_log 0 "path: $_path"
+	_result=$(${_git} update-index --add --cacheinfo 10064,$_emptyBlob,$_path)
+	_e=$?
+	_log 0 "update-index exit code and message: $_e: '$_result'"
 	_log 1 "mapped ${_blobID:0:5} as ${_path}"
 }
+
+_addEmptyTree() {
+	#########################################################
+	local _blobID=${1}
+	_log 0 "CORRUPTING FOR TESTING (adding an empty tree)"
+	_emptyTree=$(${_git} mktree </dev/null)
+	_emptyTreePath="y/${_blobID}"
+	_et=$(echo -e 040000 tree $_emptyTree\\t$_emptyTreePath)
+	_gitExit=$(echo "${_et}" | ${_git} update-index --add --index-info)
+	_log 1 "git update index for empty tree result: '${_gitExit}'"
+	_log 1 "the next time it runs we want _isIndexClean to ERR"
+	#########################################################
+}
+
 
 _mapFirstLine() {
 	# take first line
@@ -537,14 +611,13 @@ _mapFirstLine() {
 }
 
 _mapTags() {
-	# arg 1 = key
-	# arg 2 = blobID
-	# check for tags on first line
+	# arg 1 = blobID
+	# check for tags (hash at first character of line)
 	# assumes global _blobArray
-	[ $# -ne 2 ] && return 1
-	local _key="${1}"
-	local _blobID=${2}
+	[ $# -ne 1 ] && return 1
+	local _blobID=${1}
 	local _line
+	_emptyBlob=$(${_git} hash-object -w --stdin </dev/null)
 	for _line in "${_blobArray[@]}"; do
 		if [ -z "${_line:-}" ]; then
 			_log 0 "blank line detected..skipping"
@@ -556,9 +629,28 @@ _mapTags() {
 				_log 0 "empty tag, skipping"
 			else
  				_log 0 "found tag '${_tag:1}'"
-				_mapBlob "e/${_tag:1}/${_key}" $_blobID 
-				#${_git} update-index --add --cacheinfo 10064 $_blobID e/${_tag:1}/${_key}
-				_log 1 "mapped ${_blobID:0:5} as ${_key} in tag space e/${_tag:1}"
+				# get the t/TAG/count.NUMBER
+				_tagCount=$(${_git} ls-files t/${_tag:1}/count.* | cut -f3 -d/)
+				_log 0 "tag count for ${_tag:1} is ${_tagCount}"
+				if [ -z "${_tagCount}" ]; then
+					_log 0 "first encounter with ${_tag:1}"
+					${_git} update-index --add --cacheinfo 10064,$_emptyBlob,"t/${_tag:1}/count.1"
+					_log 0 "added count.1 in t/${_tag:1}"
+				else
+					_log 1 "found ${_tagCount#*.} tags for ${_tag:1}"
+					${_git} --work-tree=${_germDir} update-index --remove "t/${_tag:1}/${_tagCount}"
+					_log 0 "removed ${_tagCount} from index at t/${_tag:1}/${_tagCount}"
+					x=${_tagCount#*.}
+					((x++))
+					_tagCount=count.$x
+					_log 0 "set ${_tagCount}"
+					${_git} update-index --add --cacheinfo 10064,$_emptyBlob,"t/${_tag:1}/${_tagCount}"
+					_log 0 "updated t/${_tag:1} to ${_tagCount}"
+				fi
+				# update the tag-path
+				_path="t/${_tag:1}/$_blobID/self"
+				${_git} update-index --add --cacheinfo 10064,$_emptyBlob,$_path
+				_log 0 "mapped ${_blobID:0:5} in ${_path}"
 			fi
 		fi
 	done
@@ -574,9 +666,12 @@ _mapTags() {
 # commit relies on _blobArray, using the first line as the commit msg
 _doCommit() {
 	# discrete operation...write the index as a commit
-	_log 2 "commit msg= ${_blobArray[0]}"
-	_commitMsg="${_blobArray[0]}"
+	_log 0 "commit msg: '${1}'"
+	_commitMsg="${1}"
 	_tree=$(${_git} write-tree)
+	######### stderr: warning: index entry is a directory, but not sparse (00000000)
+	###  BUG HERE: when we have an empty tree...we should catch it here if we can
+	################ this results in an inconsistent index
 	_log 1 "created tree object ${_tree}"
 	# next make sure there is a parent
 	if ${_git} rev-list --max-parents=0 HEAD &>/dev/null; then
@@ -593,97 +688,216 @@ _doCommit() {
 	return 0
 }	
 
-_printCommitMsg() {
-	# assumes global _blobArray
-	_commitMsg="${_blobArray[0]}"
-	echo "${_commitMsg}"
+# TODO add()
+# the namespace is important.  namespace is created and modified every write.
+# expensive, but we get a lot in exchange.  we use the object hash id as leafs
+# in the namespace, as properties.
+# so the namespace is not a tree as much as a lattice
+# each object has a history.
+# 1. create an object
+# 2. add primary key...get blobID
+# 3. map primary key namespace
+# 4. map hueristic namespace
+# >> call the germ and edit...add instructions
+# each read of the file puts it through the mapping filter
+# the mapping filter evaluates the file, consults with the existing index, then
+# modifies the index based on the data, (never the file).
+# the ability to restore the index is important...which is to pull the last
+# commit tree and use it when there is a question...perhaps stash the objects
+# and the dirty commits...and offer restore options.  the index is composed of
+# 26 namespace slots, a-z.  each namespace [a-z] is used for classification, eg
+# as follows
+#
+# define the tree index namespace and its use
+# a/		primary key, hash of date, unix seconds key
+# b/		workflow status
+# c/		source
+# d/		first word catalog
+# e/
+# f/		first word
+# g/
+# h/
+# i/
+# j/
+# k/
+# l/		first line
+# m/
+# n/
+# o/
+# p/
+# q/
+# r/
+# s/		source (notebook name, free, other)
+# t/		tag (human produced)
+# u/		user actions
+# v/
+# w/
+# x/
+# y/
+# z/
+#
+# each write must then collect trees which each are attached to the various
+# namespace slots for the blob in question
+# eg
+# i put in a germ, it gets slotted in t/germ/f65h7d
+# i look at it later by selecting t/germ from the list on the screen
+#    the screen is colored by heat and select simple options
+# i can edit a file for one
+# i can also act on the file
+# these both interact with the namespace tree
+# i would select from the list (eg) based on commit message
+# commit message must therefore be better curated
+# they must be no longer than 60 characters (eg)
+# they will be constructed from the first string of words in the germ
+# they will be normalized (?)
+# the object edited will be the blobID
+# every read and edit of every blob results in:
+#		capture the tree of the name of the blobID (a snapshot of the blob "state")
+#		attach the tree to the next first location it gets put
+#		link the others
+# 	u/ for user actions
+#		f/ for blob flow
+#		 
+
+_buildCommitMsg() {
+	# arg 1 = string [required]
+	# read string (the whole blob) line by line
+	# construct git commit message string (combining lines until max exceeded)
+	# truncate if necessary and append with "..."
+	# total character count <=75
+	# print string or return 1
+	# TODO: consider what to do with tags
+	local _maxLength=75
+	local _commitMsgString=
+	local _lines
+	# empty string not allowed
+	[ -z "${1:-}" ] && return 1
+	# count lines
+	l="${1//[!$'\n']/}"
+	_lines=$((${#l} + 1))
+	#
+	##################### BUG
+	#_log 0 "${FUNCNAME}: found ${_lines} lines in string"
+	# ############## when i have _log on...and pass a value from the function
+	# _log fucks it up
+	#####################
+	# if single line string, truncate if necessary and return
+	#if [ ${_lines} = 1 ]; then
+	#	_commitMsgString="${1:0:${_maxLength}}..."
+		#_log 0 "${FUNCNAME}: commit message string: '${_commitMsgString}'"
+	#	echo "${_commitMsgString}"
+	#	return
+	#fi
+	# process multi-line entries
+	while read -r line; do
+		# single line entry, set and break
+		if [ ${_lines} = 1 ]; then
+			_commitMsgString="${1}"
+			break
+		fi
+		#echo reading line: "$line"
+		words=($line)
+		#echo words in line: ${#words[@]}
+		# one word lines
+		if [[ ${#words[@]} = 1 ]]; then
+			#echo " one word line: '${line%% *}'"
+			# if the commit message string is empty
+			if [[ -z "${_commitMsgString}" ]]; then
+				#echo "  empty commit msg string"
+				_commitMsgString+="${line%% *}:"
+			elif [[ ${_commitMsgString:(-1)} = ":" ]]; then
+				_commitMsgString+=" ${line%% *}"
+			else
+				#echo "  non-empty commit msg string"
+				_commitMsgString+="; ${line%% *}"
+			fi
+		# empty lines
+		elif [[ ${#words[@]} = 0 ]]; then
+			#echo " ignore empty line: '${line}'"
+			true
+		# multi-word lines
+		else
+			#echo " multi-line line: '${line}'"
+			if [[ ${_commitMsgString:(-1)} = ":" ]]; then
+				# first line after first-word+colon
+				_commitMsgString+=" ${line}"
+			elif [[ -z "${_commitMsgString}" ]]; then
+				# first slot in empty commit message string
+				_commitMsgString+="${line}:"
+			else
+				# insert semi-colon to designate new line
+				_commitMsgString+="; ${line}"
+			fi	
+		fi
+		#echo " inside loop commit string: '${_commitMsgString}'"
+		#echo " string length: ${#_commitMsgString}"
+		if [[ ${#_commitMsgString} -ge ${_maxLength} ]]; then
+			break
+		fi
+	done < <(printf '%s\n' "${1}")
+	# truncate if necessary
+	if [[ ${#_commitMsgString} -ge ${_maxLength} ]]; then
+		_commitMsgString="${_commitMsgString:0:${_maxLength}}..."
+	fi
+	[ -z "${_commitMsgString}" ] && return 1
+	echo "${_commitMsgString}"
+	#echo "outside loop commit string: '${_commitMsgString}'"
+}
+
+_doesKeyExist() {
+	# arg 1 = key (namespace path)
+	# return 0 if true
+	# return 1 if false (no key exists)
+	${_git} ls-files --error-unmatch "${1}" &>/dev/null || return 1
+}
+
+_getNewKey() {
+	# generate a new unique unix_time key path using date +%s
+	# make sure it is unique...wait a couple seconds...otherwise return 1
+	# print the key path
+	local _key=$(date +%s)
+	local _keyPath="a/$(date +%Y)/$(date +%m)/$(date +%d)/${_key}"
+	i=0
+	while _doesKeyExist "${_keyPath}"; do
+		sleep 0.5
+		((i++))
+		if [[ "$i" == '3' ]]; then
+			return 1
+		fi
+	done
+	echo "${_keyPath}"
 }
 
 _add() {
+	local _germString=
+	local _commitMsgString=
+	local _primaryKey=
 	if [ ${_inline:-null} = "true" ]; then
-		_log 1 "found an inline string: '$_workingParams'"
-		[ -z "${_workingParams}" ] && _log 4 "'add -i' cannot contain an empty message"
+		_log 0 "found an inline string: '$_workingParams'"
+		[ -z "${_workingParams}" ] && _log 4 "${FUNCNAME}: 'add -i' cannot contain an empty message"
+		_germString="${_workingParams}"
 	else
 		_message=$(vipe)
-		_log 0 "vipe-produced entry: $_message"
+		#_log 0 "vipe-produced entry: $_message"
 		_workingParams="${_message}"
+		_germString="${_message}"
 	fi
-	_log 2 "message: ${_workingParams}"
+	_commitMsgString=$(_buildCommitMsg "${_germString}") || _log 4 "empty commit msg"
+	_log 0 "commit message: ${_commitMsgString}"
 	# set up primary key namespace mapping
-	local _key=$(date +%s)
-	local _keyPath="a/$(date +%Y)/$(date +%m)/$(date +%d)/${_key}"
+	_primaryKey=$(_getNewKey) || _log 4 "could not get a new unique key"
 	# ADD the BLOB...get the BLOB id
-	_blobID=$(${_git} hash-object --stdin -w <<< "${_workingParams}")
+	_blobID=$(${_git} hash-object --stdin -w <<< "${_germString}")
 	_log 1 "added the blob to the object store"
 	_readBlob $_blobID 
-	_mapPrimaryKey $_key $_blobID
-	# map first word on first line to d/
-	_firstWord=${_blobArray[0]%% *}
-	_mapBlob "d/${_firstWord}/${_key}" $_blobID
-	_mapTags $_key $_blobID
-	_doCommit
+	_mapPrimaryKey $_primaryKey $_blobID || _log 4 "ERROR: _mapPrimaryKey $_primaryKey $_blobID"
+	_mapTags $_blobID
+	_doCommit "${_commitMsgString}"
 }
 
-__add() {
-	# $_workingParams contains the string...we need to check if this is null as
-	# some characters (like #) will be stripped out by bash unless we escape it.
-	if [ ${_inline:-null} = "true" ]; then
-		_log 1 "found an inline string: '$_workingParams'"
-		[ -z "${_workingParams}" ] && _log 4 "'add -i' cannot contain an empty message"
-	else
-		_message=$(vipe)
-		_log 0 "vipe-produced entry: $_message"
-		_workingParams="${_message}"
-	fi
-	# set up primary key namespace mapping
-	local _key=$(date +%s)
-	local _keyPath="a/$(date +%Y)/$(date +%m)/$(date +%d)/${_key}"
-	# ADD the BLOB...get the BLOB id
-	_blobID=$(${_git} hash-object --stdin -w <<< "${_workingParams}")
-	_log 1 "added the blob to the object store"
-	# READ the blob back...first confirmation
-	# plus we will parse the blob now to build the metadata view
-	readarray -t _blobArray < <(${_git} cat-file -p ${_blobID})
-	_log 1 "found ${#_blobArray[@]} line[s] in the new blob"
-	# UPDATE the index (ie maps blob to namespace...hashed date - key is seconds)
-	${_git} update-index --add --cacheinfo 10064 $_blobID ${_keyPath}
-	_log 1 "added ${_blobID} as ${_keyPath}"
-	# map first word on first line to d/
-	_firstWord=${_blobArray[0]%% *}
-	${_git} update-index --add --cacheinfo 10064 $_blobID d/${_firstWord}/${_key}
-	_log 1 "mapped ${_blobID:0:5} as ${_key} in d/${_firstWord}"
-	# check for tags on first line
-	for _line in "${_blobArray[@]}"; do
-		if [ -z "${_line:-}" ]; then
-			continue	# ignore blank lines
-		elif [ "${_line:0:1}" = "#" ]; then
-			# BUG Here...must not set tag to null string if there is no tag
-			_tag=${_line%% *}
- 			_log 0 "found tag '${_tag:1}'"
-			${_git} update-index --add --cacheinfo 10064 $_blobID e/${_tag:1}/${_key}
-			_log 1 "mapped ${_blobID:0:5} as ${_key} in tag space e/${_tag:1}"
-		fi
-	done
-	# next create a tree object from the index
-	# THIS IS A DISCRETE OPERATION...put in a function
-	_tree=$(${_git} write-tree)
-	_log 1 "created tree object ${_tree}"
-	# next make sure there is a parent
-	if ${_git} rev-list --max-parents=0 HEAD &>/dev/null; then
-		_parent=$(${_git} rev-list -n1 --all HEAD)
-		_log 1 "found a parent: ${_parent}"
-		_commit=$(${_git} commit-tree $_tree -p $_parent -m "$_workingParams")
-	else
-		_log 1 "found no parent"
-		_commit=$(${_git} commit-tree $_tree -m "[genesis] ${_workingParams}")
-	fi
-	_log 1 "created the commit object ${_commit}"
-	${_git} update-ref HEAD "${_commit}"
-	_log 1 "updated the HEAD reference"
-	return 0
-}
 # git ls-files is the correct way to navigate the git tree we are creating here
 
+# TODO make an empty initial commit now and remove the check for parent
 _create() {
 	local _gitUserName=$(git config --global --get user.name)
 	local _gitUserEmail=$(git config --global --get user.email)
@@ -728,13 +942,61 @@ _create() {
 # git config --global log.date local  ... or check that these are already set in
 # global
 
+# TIP
+# git help --config
+# lists all the git config variables
+
 }
 
 _isIndexClean() {
-	${_git} diff-index --quiet --cached HEAD -- || return 1
+	# arg 1 = level (0-3) [optional...0 is default]
+	# this function needs to run in 2 ways
+	# 1 normal...just check the basics
+	# 2 thorough...run the full checks
+	# to override the global...set the first var
+	local _inspectLevelOverride=
+	local _inspectLevel=${_inspectLevelOverride:-${1:-0}}
+	local _levelMap=([0]=QUICK [1]=THOROUGH [2]=DEEP [3]=REPAIR)
+	local _level=${_levelMap[${_inspectLevel}]}
+	if [ $_level = "QUICK" ]; then
+		_log 0 "${FUNCNAME}: running inspect level ${_inspectLevel}: ${_level}"
+		${_git} diff-index --quiet --cached HEAD 2>&1 >/dev/null || return 1
+		return $?
+	elif [ $_level = "THOROUGH" ]; then
+		_log 0 "${FUNCNAME}: running inspect level ${_inspectLevel}: ${_level}"
+		${_git} diff-index --quiet --cached HEAD 2>&1 >/dev/null || return 1
+	elif [ $_level = "DEEP" ]; then
+		_log 0 "${FUNCNAME}: running inspect level ${_inspectLevel}: ${_level}"
+		${_git} diff-index --cached HEAD || return 1
+		_log 0 "'git fsck --full --verbose'"
+		${_git} fsck --full --verbose
+		_gitFsckExit=$?
+		_log 1 "git fsck exit status: '${_gitFsckExit}'"
+	elif [ $_level = "REPAIR" ]; then
+		_log 0 "${FUNCNAME}: running inspect level ${_inspectLevel}: ${_level}"
+		${_git} diff-index --quiet --cached HEAD 2>&1 >/dev/null || return 1
+		echo REPAIR
+	else
+		_log 3 "${FUNCNAME}: illegal level $_level"
+		return 1
+	fi
+	#_gitDiffIndex=$(${_git} diff-index --quiet --cached HEAD -- 2>&1)
+	#if [ $? = 0 ] && [ -z "${_gitDiffIndex}" ]; then
+	#	_log 0 "'git diff-index --quiet --cached HEAD --' exited cleanly"
+ 	#	return 0
+	#else
+	#	if echo ${_gitDiffIndex} | grep ^"warning: index entry is a directory"; then
+	#		_log 3 "an empty tree has been added"
+	#		return 1
+	#	else
+	#		_log 3 "'git diff-index --quiet --cached HEAD --' complained: '${_gitDiffIndex}'"
+	#		return 1
+	#	fi
+	#fi
 }
 
-_recover() {
+
+__recover() {
 	# check git status for objects in index not yet committed
 	# we always want the index to match the latest commit...this is an exercise of
 	# automatic repair when an add() operation fails completely
@@ -760,22 +1022,138 @@ _recover() {
 	# sort by unix seconds key
 	# cat-file for first line (the commit message)
 	# get
-	_log 0 "remove the d/ map in the index first"
+	#_log 0 "remove the d/ map in the index first"
 	#${_git} update-index --remove --cacheinfo 10064,$_blobID,d/${_tag:1}/${_key}
 	#${_git} rm --cached a/2023/01/30/1675145248
 	#${_git} rm --cached d/germ/1675145248	
 	# DONE BY HAND
 	#_mapPrimaryKey 1675145105 bb10ac176fb1a38211c0c26d3c57c23abd1ab9f6
-	_readBlob bb10ac176fb1a38211c0c26d3c57c23abd1ab9f6
-	_mapTags 1675145105 bb10ac176fb1a38211c0c26d3c57c23abd1ab9f6
-	_printCommitMsg
-	_doCommit
+	#_readBlob bb10ac176fb1a38211c0c26d3c57c23abd1ab9f6
+	#_mapTags 1675145105 bb10ac176fb1a38211c0c26d3c57c23abd1ab9f6
+	#_printCommitMsg
+	#_doCommit
+	#
+	# TODO
+	# try to recover less delicately
+	# get diff between dirty index, stash it, and rebuild the index from the last
+	# good commit.  option to restore stash presented.
+	echo "find the last a/ entry:"
+	${_git} --no-pager diff --cached --summary -- a/
+	echo "stash it"
+	${_git} --work-tree=${_germDir} stash
+	echo "remove the cache"
+	echo "revert to the last commit"
+	echo "recover the one germ entry in stash????"
+	for i in ls ${_germDir}/a/2023/02/01/; do
+		${_git} ls-files
+	done
 }
 
+_recover() {
+	echo "find the last a/ entry:"
+	${_git} --no-pager diff --cached --summary -- a/
+  # create mode 100644 a/2023/02/02/1675389157
+	# get the blobID for it
+	# db991049c08b29dabac4344df518785cf12ec6da
+	# reset the index to clean 
+	${_git} --work-tree=${_germDir} reset --mixed
+	## make sure the global blob VAR is empty (safety)
+	[ -z ${_blobArray[0]+0} ] || _log 4 "global blob array set"
+	_readBlob db991049c08b29dabac4344df518785cf12ec6da
+	# read the blob
+	# map the blob primary key
+	_blobID=db991049c08b29dabac4344df518785cf12ec6da
+	_key=1675389157
+	_mapPrimaryKey $_key $_blobID
+	[ -z ${_blobArray[0]+0} ] ||  _log 2 "blob read"
+	# run through the tag mapper
+	_firstWord=${_blobArray[0]%% *}
+	_log 0 "WE WOULD be mapping first word $_firstWord...but experimenting"
+	_mapBlob "d/${_firstWord}/${_key}" $_blobID
+	_mapTags $_blobID
+	# commit the transaction
+	#_doCommit
+}
+
+
+_restoreLastCommit() {
+	# when index reports any inconsistencies
+	# clear the cache
+	${_git} rm -r --cached
+	# identify the last mangled commit
+	echo "NOT SURE YET"
+	# rebuild the index from the last commit
+}
 
 # 
 # TODO also capture the git errors...this is being lost now
 # and set -x is the only means of capturing the break
+
+
+
+###############
+###### SHELL
+###############
+
+_shell() {
+	# enter (cd) into studio environment
+	# change the command history file
+	# change the prompt dynamically
+	cd "${_studioDir}" || _log 4 "can not enter studio"
+	HISTFILE="${_studioDir}/.germ_history"
+	HISTSIZE=1000
+	HISTFILESIZE=10000
+	HISTTIMEFORMAT="%s %F %T "
+	HISTCONTROL=ignoreboth
+	shopt -s histappend
+	set -o history
+	local _prompt=
+	local _dirty=
+	# embedded prompt function setting...to catch a dirty index for now
+	_setPrompt() {
+		_isIndexClean || _dirty="${boldred}X${reset}"
+		if [[ ! -z ${_dirty:-} ]]; then
+			_prompt="${prompt}${_studioDirName}${reset}:${label}${_germDirName}${reset} ${_dirty} > "
+		else
+			_prompt="${prompt}${_studioDirName}${reset}:${label}${_germDirName}${reset} > "
+		fi
+	}
+	_setPrompt
+	cat <<HEREDOC
+  __  ___  ___   __  __ 
+ / _)(  _)(  ,) (  \/  )
+( (/\ ) _) )  \  )    ( 
+ \__/(___)(_)\_)(_/\/\_)
+
+germ: type ${green}help${reset} for guidance
+      type ${red}stop${reset} to leave
+
+HEREDOC
+
+	local __input
+	while IFS='' read -r -e -d $'\n' -p "${_prompt}" __input; do
+		history -s "${__input}"
+		if [[ -z "${__input}" ]]; then
+			true
+		elif [[ "${__input}" =~ (^stop$|^quit$|^exit$|^q$) ]]; then
+			cd $OLDPWD; exit 0
+		elif [[ "${__input}" =~ (^help$|^h$) ]]; then
+			_printShellUsage
+		elif [[ "${__input}" =~ (^list$|^l$) ]]; then
+			_listTags
+		elif [[ "${__input}" =~ (^status$|^stat$) ]]; then
+			_showStatus
+			_isIndexClean || _log 3 "DIRTY INDEX"
+		elif [[ "${__input}" =~ (^add$|^a$) ]]; then
+			eval "${self}" add || true
+		else
+			eval "${self}" "${__input}" || :
+			#_log 3 "command not valid: '${__input}'"
+			#_printShellUsage
+		fi
+		_setPrompt
+	done
+}	
 
 _irishExit() {
   echo -ne "\r${yellow}WARNING${reset}: ctrl-c detected; to resume, press R, to quit, press ENTER\n"
@@ -793,14 +1171,30 @@ main() {
 	_log 0 "${FUNCNAME[0]}: parameters read: ${@}"
 	_log 0 "${FUNCNAME[0]}: paired-down parameters: $_workingParams"
 	_getSubcommand $_workingParams
-  # if run without arguments, run and print _status
-	[ -z "${_subCommand:-}" ] && _printUsage
-	_log 0 "${FUNCNAME[0]}: _subCommand: $_subCommand"
+  # if run without arguments, enter germ shell
+	#[ -z "${_subCommand:-}" ] && _printUsage
+	# not sure if launching the shell here makes sense
+	# seems that display gets messed up
+	_log 0 "${FUNCNAME[0]}: _subCommand: ${_subCommand:-}"
 	_log 0 "${FUNCNAME[0]}: remaining args: $_workingParams"
 	# validate the environment first
 	_isEnvSufficient || _log 4 "cannot run until these problems are resolved"
 	# do it
-	[ -n "${_subCommand:-}" ] && eval _"${_subCommand}"
+	#
+	# figure out how to incorporate _shell correctly
+	# launched with no args..._shell
+	# _shell calls back when allowed
+	# possibly check for tty?
+	[[ -t 1 ]] && echo 'STDOUT is attached to TTY'
+	[[ -p /dev/stdout ]] && echo 'STDOUT is attached to a pipe'
+	[[ ! -t 1 && ! -p /dev/stdout ]] && echo 'STDOUT is attached to a redirection'
+	if [ -z "${_subCommand:-}" ]; then
+		_shell 
+	elif [ -n "${_subCommand:-}" ]; then
+		eval _"${_subCommand}"
+	fi
+	#[ -z "${_subCommand:-}" ] && _shell ||
+	#[ -n "${_subCommand:-}" ] && eval _"${_subCommand}"
 }
 main "${@}"
 
