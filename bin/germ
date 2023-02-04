@@ -9,7 +9,10 @@ set -o nounset
 set -o pipefail
 
 # REQUIRED EXTERNAL COMMANDS
-_requiredCommands=(git gitdisk dsink tig vipe)
+_requiredCommands=(git gitdisk dsink vipe)
+
+# RECOMMENDED EXTERNAL COMMANDS
+_recommendedCommands=(git-sizer tig)
 
 # ENVIRONMENT SETTINGS
 
@@ -31,6 +34,16 @@ self=$(basename $0)
 [[ -f "${_logFile}" ]] && _canLog=true
 
 # BEHAVIOR
+
+# TODO figure out a better means of knowing
+# 1. is this an interactive shell session
+# 2. is this part of a pipe
+# 3. are we in our custom interactive shell (and does that matter?)
+# set up logging and stdout stderr etc with traps
+# possibly check for tty?
+[[ -t 1 ]] && echo 'STDOUT is attached to TTY'
+[[ -p /dev/stdout ]] && echo 'STDOUT is attached to a pipe'
+[[ ! -t 1 && ! -p /dev/stdout ]] && echo 'STDOUT is attached to a redirection'
 
 # debugging and logging settings
 # script debug toggle (set to true to enable default global debugging)
@@ -60,6 +73,9 @@ _prompt() {
 
 # LOGGING 
 
+# 
+# TODO also capture the git errors...this is being lost now
+# and set -x is the only means of capturing the break
 _log() {
 	# overly complex global prompt and logging function
 	# consults _DEBUG _SILENT and _LOG for behavior
@@ -115,7 +131,6 @@ _log() {
 			echo "${boldred}FATAL${reset}: $self: ${_logMessage}" && exit 1
 	fi
 }
-
 
 # HELPER FUNCTIONS
 
@@ -253,6 +268,11 @@ _getSubcommand() {
 				_subCommand=$1
 				return
 				;;
+			sizer)
+				_log 0 "_getSubcommand: $1"
+				_subCommand=$1
+				return
+				;;
 			*)
 				_log 3 "${FUNCNAME}: '${1}' is not a subcommand"
 				return 1
@@ -264,6 +284,7 @@ _getSubcommand() {
 
 _isEnvSufficient() {
 	# check for required tools, report accordingly
+	# TODO add recommended checks with _missing{0:name,1:name}
 	local _sufficient=true
 	for _required in "${_requiredCommands}"; do
 		if ! hash "${_required}" 2>/dev/null; then
@@ -277,10 +298,12 @@ _isEnvSufficient() {
 		_log 3 "found no ${_germDir}; run 'germ create' first"
 		_sufficient=false
 	fi
+	# TODO this little construct isn't correct:
 	[ ${_sufficient} = true ] && return 0 || return 1
 }
 
 # SUBCOMMAND FUNCTIONS AND SUBFUNCTIONS
+
 _getAddOpts() {
 	# check for backup flags and args
 	local OPTIND=1
@@ -343,15 +366,9 @@ _getCreateOptions() {
 	export _workingParams=$*
 }
 	
-# germ add
-# two options
-#		inline (invoked by add -i)
-#			no tags allowed, naturally (bash interprets # as a comment)
-#			tags allowed if escaped ("add -i \#<tag> followed by the entry")
-#		buffer (add without args, calls an editor, the saved results comprise)
-#			
 # SUB COMMANDS
 
+# TODO adapt and remove
 __list() {
 	#local _gitdir="${_germGitDisk}"
 	#local _git="git --git-dir=${_gitdir}"
@@ -385,9 +402,6 @@ _showStatus() {
 	_log 0 "${FUNCNAME[0]}: _SILENT=${_SILENT}"
 	_log 0 "${FUNCNAME[0]}: _DEBUG=${_DEBUG}"
 }
-	
-
-
 
 _status() {
 	_log 1 "git version: $(${_git} --version)"
@@ -589,20 +603,6 @@ _mapBlob() {
 	_log 1 "mapped ${_blobID:0:5} as ${_path}"
 }
 
-_addEmptyTree() {
-	#########################################################
-	local _blobID=${1}
-	_log 0 "CORRUPTING FOR TESTING (adding an empty tree)"
-	_emptyTree=$(${_git} mktree </dev/null)
-	_emptyTreePath="y/${_blobID}"
-	_et=$(echo -e 040000 tree $_emptyTree\\t$_emptyTreePath)
-	_gitExit=$(echo "${_et}" | ${_git} update-index --add --index-info)
-	_log 1 "git update index for empty tree result: '${_gitExit}'"
-	_log 1 "the next time it runs we want _isIndexClean to ERR"
-	#########################################################
-}
-
-
 _mapFirstLine() {
 	# take first line
 	# replace space with dash
@@ -656,22 +656,11 @@ _mapTags() {
 	done
 }
 
-# i had a bug which opened my eyes to an interesting possibility
-# i was adding the whole string (it was _workingParams or _message) as the
-# commit message...which made git log and tig both show the germ itself nicely.
-# i fixed the commit to use the first line instead of the whole message string
-# and now the git log and tig both lost the bug.
-
-
-# commit relies on _blobArray, using the first line as the commit msg
 _doCommit() {
 	# discrete operation...write the index as a commit
 	_log 0 "commit msg: '${1}'"
 	_commitMsg="${1}"
 	_tree=$(${_git} write-tree)
-	######### stderr: warning: index entry is a directory, but not sparse (00000000)
-	###  BUG HERE: when we have an empty tree...we should catch it here if we can
-	################ this results in an inconsistent index
 	_log 1 "created tree object ${_tree}"
 	# next make sure there is a parent
 	if ${_git} rev-list --max-parents=0 HEAD &>/dev/null; then
@@ -775,19 +764,6 @@ _buildCommitMsg() {
 	# count lines
 	l="${1//[!$'\n']/}"
 	_lines=$((${#l} + 1))
-	#
-	##################### BUG
-	#_log 0 "${FUNCNAME}: found ${_lines} lines in string"
-	# ############## when i have _log on...and pass a value from the function
-	# _log fucks it up
-	#####################
-	# if single line string, truncate if necessary and return
-	#if [ ${_lines} = 1 ]; then
-	#	_commitMsgString="${1:0:${_maxLength}}..."
-		#_log 0 "${FUNCNAME}: commit message string: '${_commitMsgString}'"
-	#	echo "${_commitMsgString}"
-	#	return
-	#fi
 	# process multi-line entries
 	while read -r line; do
 		# single line entry, set and break
@@ -795,29 +771,22 @@ _buildCommitMsg() {
 			_commitMsgString="${1}"
 			break
 		fi
-		#echo reading line: "$line"
 		words=($line)
-		#echo words in line: ${#words[@]}
 		# one word lines
 		if [[ ${#words[@]} = 1 ]]; then
-			#echo " one word line: '${line%% *}'"
 			# if the commit message string is empty
 			if [[ -z "${_commitMsgString}" ]]; then
-				#echo "  empty commit msg string"
 				_commitMsgString+="${line%% *}:"
 			elif [[ ${_commitMsgString:(-1)} = ":" ]]; then
 				_commitMsgString+=" ${line%% *}"
 			else
-				#echo "  non-empty commit msg string"
 				_commitMsgString+="; ${line%% *}"
 			fi
 		# empty lines
 		elif [[ ${#words[@]} = 0 ]]; then
-			#echo " ignore empty line: '${line}'"
 			true
 		# multi-word lines
 		else
-			#echo " multi-line line: '${line}'"
 			if [[ ${_commitMsgString:(-1)} = ":" ]]; then
 				# first line after first-word+colon
 				_commitMsgString+=" ${line}"
@@ -829,8 +798,6 @@ _buildCommitMsg() {
 				_commitMsgString+="; ${line}"
 			fi	
 		fi
-		#echo " inside loop commit string: '${_commitMsgString}'"
-		#echo " string length: ${#_commitMsgString}"
 		if [[ ${#_commitMsgString} -ge ${_maxLength} ]]; then
 			break
 		fi
@@ -841,7 +808,6 @@ _buildCommitMsg() {
 	fi
 	[ -z "${_commitMsgString}" ] && return 1
 	echo "${_commitMsgString}"
-	#echo "outside loop commit string: '${_commitMsgString}'"
 }
 
 _doesKeyExist() {
@@ -874,11 +840,10 @@ _add() {
 	local _primaryKey=
 	if [ ${_inline:-null} = "true" ]; then
 		_log 0 "found an inline string: '$_workingParams'"
-		[ -z "${_workingParams}" ] && _log 4 "${FUNCNAME}: 'add -i' cannot contain an empty message"
+		[ -z "${_workingParams}" ] && _log 3 "${FUNCNAME}: 'add -i' cannot contain an empty message"
 		_germString="${_workingParams}"
 	else
 		_message=$(vipe)
-		#_log 0 "vipe-produced entry: $_message"
 		_workingParams="${_message}"
 		_germString="${_message}"
 	fi
@@ -894,8 +859,6 @@ _add() {
 	_mapTags $_blobID
 	_doCommit "${_commitMsgString}"
 }
-
-# git ls-files is the correct way to navigate the git tree we are creating here
 
 # TODO make an empty initial commit now and remove the check for parent
 _create() {
@@ -954,6 +917,7 @@ _isIndexClean() {
 	# 1 normal...just check the basics
 	# 2 thorough...run the full checks
 	# to override the global...set the first var
+	# TODO fix this shit
 	local _inspectLevelOverride=
 	local _inspectLevel=${_inspectLevelOverride:-${1:-0}}
 	local _levelMap=([0]=QUICK [1]=THOROUGH [2]=DEEP [3]=REPAIR)
@@ -980,21 +944,12 @@ _isIndexClean() {
 		_log 3 "${FUNCNAME}: illegal level $_level"
 		return 1
 	fi
-	#_gitDiffIndex=$(${_git} diff-index --quiet --cached HEAD -- 2>&1)
-	#if [ $? = 0 ] && [ -z "${_gitDiffIndex}" ]; then
-	#	_log 0 "'git diff-index --quiet --cached HEAD --' exited cleanly"
- 	#	return 0
-	#else
-	#	if echo ${_gitDiffIndex} | grep ^"warning: index entry is a directory"; then
-	#		_log 3 "an empty tree has been added"
-	#		return 1
-	#	else
-	#		_log 3 "'git diff-index --quiet --cached HEAD --' complained: '${_gitDiffIndex}'"
-	#		return 1
-	#	fi
-	#fi
 }
 
+_sizer() {
+	cd ${_germGitDisk}
+	git-sizer --verbose
+}
 
 __recover() {
 	# check git status for objects in index not yet committed
@@ -1085,11 +1040,13 @@ _restoreLastCommit() {
 	# rebuild the index from the last commit
 }
 
-# 
-# TODO also capture the git errors...this is being lost now
-# and set -x is the only means of capturing the break
-
-
+_makeDirty() {
+	# test function to intentionally leave a mess
+	echo "TEST 1: PUT a blob in without a map"
+	echo "TEST 2: PUT a blob, map key, forget to map tags"
+	echo "TEST 3: other atomic tests?"
+	echo "TODO: DETECT condition...clean and clear programatically"
+}
 
 ###############
 ###### SHELL
@@ -1111,12 +1068,14 @@ _shell() {
 	local _dirty=
 	# embedded prompt function setting...to catch a dirty index for now
 	_setPrompt() {
+		local _dirty=""
 		_isIndexClean || _dirty="${boldred}X${reset}"
-		if [[ ! -z ${_dirty:-} ]]; then
+		#if [[ ! -z ${_dirty:-} ]]; then
 			_prompt="${prompt}${_studioDirName}${reset}:${label}${_germDirName}${reset} ${_dirty} > "
-		else
-			_prompt="${prompt}${_studioDirName}${reset}:${label}${_germDirName}${reset} > "
-		fi
+		#else
+		#	_prompt="${prompt}${_studioDirName}${reset}:${label}${_germDirName}${reset} > "
+		#fi
+		# TODO confirm this works instead of the if:
 	}
 	_setPrompt
 	cat <<HEREDOC
@@ -1148,12 +1107,13 @@ HEREDOC
 			eval "${self}" add || true
 		else
 			eval "${self}" "${__input}" || :
-			#_log 3 "command not valid: '${__input}'"
-			#_printShellUsage
 		fi
 		_setPrompt
 	done
 }	
+
+###########################
+# trap and signal catching
 
 _irishExit() {
   echo -ne "\r${yellow}WARNING${reset}: ctrl-c detected; to resume, press R, to quit, press ENTER\n"
@@ -1171,30 +1131,14 @@ main() {
 	_log 0 "${FUNCNAME[0]}: parameters read: ${@}"
 	_log 0 "${FUNCNAME[0]}: paired-down parameters: $_workingParams"
 	_getSubcommand $_workingParams
-  # if run without arguments, enter germ shell
-	#[ -z "${_subCommand:-}" ] && _printUsage
-	# not sure if launching the shell here makes sense
-	# seems that display gets messed up
 	_log 0 "${FUNCNAME[0]}: _subCommand: ${_subCommand:-}"
 	_log 0 "${FUNCNAME[0]}: remaining args: $_workingParams"
 	# validate the environment first
 	_isEnvSufficient || _log 4 "cannot run until these problems are resolved"
-	# do it
-	#
-	# figure out how to incorporate _shell correctly
-	# launched with no args..._shell
-	# _shell calls back when allowed
-	# possibly check for tty?
-	[[ -t 1 ]] && echo 'STDOUT is attached to TTY'
-	[[ -p /dev/stdout ]] && echo 'STDOUT is attached to a pipe'
-	[[ ! -t 1 && ! -p /dev/stdout ]] && echo 'STDOUT is attached to a redirection'
-	if [ -z "${_subCommand:-}" ]; then
-		_shell 
-	elif [ -n "${_subCommand:-}" ]; then
-		eval _"${_subCommand}"
-	fi
-	#[ -z "${_subCommand:-}" ] && _shell ||
-	#[ -n "${_subCommand:-}" ] && eval _"${_subCommand}"
+	# run germ shell if no arguments
+	[ -z "${_subCommand:-}" ] && _shell
+	# otherwise, pass the commands to the called "command"
+	[ -n "${_subCommand:-}" ] && eval _"${_subCommand}"
 }
 main "${@}"
 
