@@ -88,7 +88,8 @@ _info() {
 warn=$(tput setab 3; tput setaf 0)
 _warn() {
 	# hack to display warning...need to fix up the whole _log idea
-	echo -e "${warn}WARN${reset} ${1} "
+	#echo -e "${warn}WARN${reset} ${1} "
+	echo "${warn}WARN${reset} ${1} "
 }
 
 # LOGGING 
@@ -503,6 +504,8 @@ _listKeys() {
 	${_git} ls-files a/
 } 
 
+# problems include matching a tag '#' if ^'##' is found (as well as other
+# non-alpha-numeric characters
 _mapTags() {
 	# arg 1 = blobID
 	# check for tags (hash at first character of line)
@@ -610,6 +613,9 @@ _buildCommitMsg() {
 	[ -z "${_commitMsgString}" ] && return 1
 	echo "${_commitMsgString}"
 }
+
+# TODO add timer to catch left screen
+# TODO use pico for certain functions, vim for others
 
 _add() {
 	local _germString=
@@ -893,6 +899,9 @@ _doesKeyExist() {
 	${_git} ls-files --error-unmatch "${1}" &>/dev/null || return 1
 }
 
+# TODO change this from checking the index whole to checking:
+# a/ for dropped (dangling) blobs
+# ie ignore c/ which icludes state...which we can tolerate
 _isIndexClean() {
 	# arg 1 = level (0-3) [optional...0 is default]
 	# 0 normal...just check the basics and return 0/1
@@ -965,6 +974,7 @@ _saveSource() {
 	_mapBlob "${_id}" "c/${1}/self"
 	_desc=$(_writeBlob "${2}")
 	_mapBlob "${_desc}" "c/${1}/self.description"
+	_doCommit "[source] added ${1}"
 }
 
 # germ methods required
@@ -1004,6 +1014,10 @@ _saveSource() {
 # ie...using the truncated hash in the namespace defeats the purpose.  USE the
 # name in the namespace
 # JUST DONT DO IT...
+# INSTEAD...use the whole hash for the user id and never worry
+# UNLESS...the user changes his email address
+# SO for u/ we need to hash the username OR invent some other workaround to
+# allow changed emails...or just abandon using the hash at all
 #
 # METHODS USED
 # _doesKeyExist
@@ -1032,6 +1046,10 @@ _readKey() {
 	_blobid=$(${_git} ls-files --stage ${1} | cut -d' ' -f2)
 	_printBlob ${_blobid} 
 }
+# exporting these functions to give fzf access to them
+export -f _readKey
+export _git
+export -f _printBlob
 
 _getSourceList() {
 	# create a list from c/*/self
@@ -1072,7 +1090,15 @@ _test() {
 ###############
 ###### SOURCE
 ###############
-
+# TODO allow a sticky setting of source...ie a commit
+# TODO allow a default...same as sticky commit?  yes i think
+# TODO decide and define how to have UNSET source...and what that means or
+# whether all entries always have a source...i think no source can be an
+# attribute...like a loose piece of paper
+#
+# TODO future _source operations...merge notebooks, split notebooks, archive,
+# and print
+#
 _source () {
 	local _currentSource="UNSET"
 	local _maxLength=20
@@ -1092,15 +1118,18 @@ _source () {
     SOURCE currently set to ${green}${_currentSource}${reset}
     c) change source
     s) show details of ${_currentSource}
+    e) edit description for ${_currentSource}	
     n) add a new media source
-    e) exit
+    h) help
+    q) quit
 
 "
-	while read -r -s -n 1 -p "${prompt}USER${reset} enter selection " _selection; do
+	while read -r -s -n 1 -p "${user}USER${reset} enter selection " _selection; do
 		case $_selection in
  			c)
 				_setSource $(_getSourceList | fzf)
 				echo
+				_info "changed source to: $(_getSource)"
 				exit 0
 				;;
 			s)
@@ -1108,11 +1137,24 @@ _source () {
 				_info "current source: ${_currentSource}"
 				_info "description:    $(_readKey c/${_currentSource}/self.description)"
 				;;
+			e)
+				_sourceToEdit=$(_getSourceList | fzf --preview='_readKey c/{}/self.description')
+				# this if-clause is here because a source got in without a description;
+				# its a case that should never happen, being enforced when the source goes in
+				if _doesKeyExist "c/${_sourceToEdit}/self.description"; then
+					_newDescription=$(_readKey "c/${_sourceToEdit}/self.description" | vipe)
+				else
+					_newDescription=$(vipe)
+				fi
+				_id=$(_writeBlob "${_newDescription}")
+				_mapBlob "${_id}" "c/${_sourceToEdit}/self.description"
+				_doCommit "[source] updated ${_sourceToEdit} description"
+				;;
 			n)
 				echo
 				_newSourceMenu
 				;;
-			e|q)
+			q)
 				echo
 				exit 0
 				;;
@@ -1131,7 +1173,7 @@ _source () {
 		done
 	}
 	_newSourceMenu() {
-			while read -r -e -n${_maxLength} -p "${prompt}USER${reset} enter new source name (? for guidance): " _a; do
+			while read -r -e -n${_maxLength} -p "${user}USER${reset} enter new source name (? for guidance): " _a; do
 				[[ ${#_a} -eq 20 ]] && _warn "reached max length of ${_maxLength}!"
 				case "${_a}" in
 					help|h|\?)
@@ -1140,7 +1182,7 @@ _source () {
 						_info "example: bible"
 						_info "example: plato-apology"
 						_info "example: random"
-						_info "rules: a-z A-Z 0-9 - allowed"
+						_info "rules: a-z A-Z 0-9 _ - allowed; no spaces allowed"
 						_info "rules: max length ${_maxLength} characters, min is 3"
 						_info "this name is used to identify a 'source' ie notebook, etc"
 						;;
@@ -1151,24 +1193,24 @@ _source () {
 					*)
 						if [[ "${_a}" =~ ^([[:lower:]|[:upper:]|[:digit:]]|[-_.]){3,20}$ ]]; then
 							if _isSourceNew "${_a}"; then
-								_info "${_a} is new and acceptable"
+								_info "'${_a}' is new and acceptable"
 							else
-								_warn "${_a} is not new"
+								_warn "'${_a}' is not new"
 								continue
 							fi
 							break
 						else
 							_warn "'${_a}' is not allowed, try again"
-							_warn "rules: a-z A-Z 0-9 - allowed"
+							_warn "rules: a-z A-Z 0-9 _ - allowed; no spaces allowed"
 							_warn "rules: max length ${_maxLength} characters, min is 3"
 						fi
 						;;
 				esac
 			done
-			while read -r -e -p "${prompt}USER${reset} enter description for ${_a}: " _b; do
+			while read -r -e -p "${user}USER${reset} enter description for '${_a}': " _b; do
 				case "${_b}" in
 					help|h|\?)
-						_info "enter the description for the source ${_a}"
+						_info "enter the description for the source '${_a}'"
 						_info "example: little green notebook 12 Jan 2023" 
 						_info "example: lecture notes from chem 202"
 						;;
@@ -1177,13 +1219,14 @@ _source () {
 						_mainMenu
 						;;
 					*)
+						[[ -z ${_b} ]] && _warn "empty description not allowed" && continue
 						break
 						;;
 				esac
 			done
-			echo "source name: ${_a}"
-			echo "source description: ${_b}"
-			while read -r -e -n1 -p "${prompt}USER${reset} save ${_a} as new notebook? (y/n) " _c; do
+			_info "source name: ${_a}"
+			_info "source description: ${_b}"
+			while read -r -e -n1 -p "${user}USER${reset} save '${_a}' as a new source? (y/n) " _c; do
 				case ${_c} in
 					y)
 						_saveSource "${_a}" "${_b}"
@@ -1197,7 +1240,7 @@ _source () {
 						;;
 				esac
 			done
-			while read -r -e -n1 -p "${prompt}USER${reset} set ${_a} as current? (y/n) " _d; do
+			while read -r -e -n1 -p "${user}USER${reset} set ${_a} as current? (y/n) " _d; do
 				case ${_d} in
 					y)
 						_setSource "${_a}"
@@ -1212,6 +1255,13 @@ _source () {
 				esac
 		done
 }
+# HEALTH CHECK for source
+# 1. get name
+# 2. get description
+# 3. look for unused source
+# 4. look for underutilized (possible consolidation)
+# TODO consider adding a super-set (like binding old notebooks into one)
+
 	_mainMenu
 }
 
@@ -1225,6 +1275,7 @@ _shell() {
 	# enter (cd) into studio environment
 	# change the command history file
 	# change the prompt dynamically
+	set -x
 	cd "${_studioDir}" || _log 4 "can not enter studio"
 	HISTFILE="${_studioDir}/.germ_history"
 	HISTSIZE=1000
@@ -1282,11 +1333,13 @@ HEREDOC
 
 _irishExit() {
   echo -ne "\r${yellow}WARNING${reset}: ctrl-c detected; to resume, press R, to quit, press ENTER\n"
+  #_warn "ctrl-c detected; to resume, press r, to quit, press ENTER"
   read -s -t 15 -n 1 _ANS
-  if [[ ${_ANS:-n} = 'R' ]]; then
+  if [[ ${_ANS:-n} = 'r' ]]; then
     return
   else
-    _log 4 "user requested exit with ctrl-c"
+   	_log 4 "user requested exit with ctrl-c"
+		#exit 1
   fi
 }
 
