@@ -9,3 +9,13 @@
 	path = /home/jason/.gitdisk/.gitconfig-gitdisk
 [log]
 	date = local
+[includeif "gitdir:/home/jason/studiodev"]
+	path = /home/jason/studiodev/.gitconfig-studio
+[includeif "gitdir:/home/jason/studiodev/germ/.gitdisk"]
+	path = /home/jason/studiodev/.gitconfig-studio
+[includeif "gitdir:/home/jason/studiodev/germtest/.gitdisk"]
+	path = /home/jason/studiodev/.gitconfig-studio
+[includeif "gitdir:/home/jason/studio"]
+	path = /home/jason/studio/.gitconfig-studio
+[includeif "gitdir:/home/jason/studio/germ/.gitdisk"]
+	path = /home/jason/studio/.gitconfig-studio

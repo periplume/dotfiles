@@ -8,37 +8,39 @@ set -o errexit  # set -e
 set -o nounset
 set -o pipefail
 
-# REQUIRED EXTERNAL COMMANDS
+###########################
+# PREREQUISITES
+###########################
+ 
+# required commands
 _requiredCommands=(git gitdisk dsink vipe fzf)
 
-# RECOMMENDED EXTERNAL COMMANDS
+# recommended commands
 _recommendedCommands=(git-sizer tig)
 
+###########################
 # ENVIRONMENT SETTINGS
+###########################
+
+# GLOBAL VARIABLES
+# these never change in the context of a session
+# these will be exported (in the case of fzf previews etc) 
 
 # WORKING ENVIRONMENT
+# _studioDirName is the umbrella or master namespace in which germ operates
 _studioDirName=studiodev
-_studioDir="$(dirname ~/.)/${_studioDirName}"
-# GERM lives inside studio (into which it is designed to publish)
+# germ lives inside studio (into which it is designed to publish)
 _germDirName=germ
-_germDir="${_studioDir}/${_germDirName}"
-_germGitDisk="${_germDir}/.gitdisk"
-_logFile="${_germDir}/germ.log"
-# SET GIT COMMANDS for convenience and consistency
-_gitWT="git --git-dir=${_germGitDisk} --work-tree=${_germDir}"
-_git="git --git-dir=${_germGitDisk}"
-
-# other important things
+# get the name of the script itself
 self=$(basename $0)
-# check if a logfile exists
-[[ -f "${_logFile}" ]] && _canLog=true
 
 # USER NAME
 # the git username and email are used to create a short hash which identifies
 # the user in the namespace.  it is set as a global variable and used in various
 # places.  it can be overridden here.
 # see _setUserUUID and _uuidGet
-_user=
+#_user=e291
+#_user=
 
 # BEHAVIOR
 
@@ -72,28 +74,37 @@ reset=$(tput sgr0)
 label=$(tput setab 7; tput setaf 0)
 prompt=$(tput setab 5; tput setaf 7)
 
+
+# user output: types
+# info		information only											blue text, green bg
+# warn		warning																black text, yellow bg
+# error																					white text, red bg
+# fatal		error and exiting (out of trap)				black text, red bg, bold text?
+# input		requires input												white text, cyan bg
+# always expect fresh new line
+# exception...after input...in which case, take care of that immediately
+
 user=$(tput setab 6; tput setaf 7)
 _prompt() {
-	# hack to avoid fixing _log and include a PROMPT type
-	# TODO: add this idea into _log to keep the "universal" claim
-	#echo -n "${user}USER${reset} ${1} "
+	# used when user input is required
 	printf "\n%s %s" "${user}USER${reset}" "${1} "
 }
 
 info=$(tput setab 2; tput setaf 0)
 _info() {
+	# prints info...multi-line messages are indented
 	SAVEIFS=$IFS
 	IFS=$'\n'
 	_pList=(${1})
 	IFS=$SAVEIFS
 	if [[ ${#_pList[@]} -gt 1 ]]; then
-		printf "\n%s %s" "${info}INFO${reset}" "${_pList[0]} "
+		printf "%s %s\n" "${info}INFO${reset}" "${_pList[0]} "
 		for (( i=1; i<${#_pList[@]}; i++ ))
 		do
-			printf "\n\t\t: %s" "${_pList[$i]} "
+			printf "\t\t: %s\n" "${_pList[$i]} "
 		done
 	else
-		printf "\n%s %s" "${info}INFO${reset}" "${1} "
+		printf "%s %s\n" "${info}INFO${reset}" "${1} "
 	fi
 }
 
@@ -102,7 +113,7 @@ _warn() {
 	# hack to display warning...need to fix up the whole _log idea
 	#echo -e "${warn}WARN${reset} ${1} "
 	#echo "${warn}WARN${reset} ${1} "
-	printf "\n%s %s" "${warn}WARN${reset}" "${1}"
+	printf "%s %s\n" "${warn}WARN${reset}" "${1}"
 }
 
 # LOGGING 
@@ -180,10 +191,17 @@ options:
  -s      suppress all stdout/stderr
  -v      print version number and exit
 
+alternate env settings:
+ -a <name>  set the germ dir name to <name>
+ -w <name>  set the master studio dir to <name> (assumes $HOME/<name>)
+
+
 commands:
  add                 add a new germ entry to the database
  edit                edit an existing germ entry
  create              create a new germ git database
+ inspect             run tig on the germ git bare repo
+ sizer               run github sizer tool on germ git bare repo
 
 for command specific usage, eg:
 $ germ help add
@@ -206,31 +224,35 @@ EOF
 _getOpts () {
 	# check for global command flags and set VARS accordingly
 	local OPTIND
-	#_log 0 "${FUNCNAME[0]}: positional parameters read: $*"
-	while getopts ":hsdlva:" flag ; do
-		#_log 0 "${FUNCNAME[0]}: OPTIND=$OPTIND flag=$flag"
+	_log 0 "${FUNCNAME[0]}: positional parameters read: $*"
+	while getopts ":hsdlva:w:" flag ; do
+		_log 0 "${FUNCNAME[0]}: OPTIND=$OPTIND flag=$flag"
 		case ${flag} in 
 			h)
 				_printInfo ; _printUsage; exit 0
 				;;
 			a)
 				_germDirName=$OPTARG
+				# TODO find a better way of avoiding using key words as OPTARGs
 				[[ $OPTARG =~ add|edit|create|print ]] && _log 4 "$OPTARG not allowed"
-				_germDir="$(dirname ~/.)/studio/${_germDirName}"
-				_logFile="${_germDir}/germ.log"
-				#_log 0 "${FUNCNAME[0]}: using alternative germ dir $_germDir"
+				_warn "using alternative germ name '$_germDirName'"
+				;;
+			w)
+				_studioDirName=$OPTARG
+				[[ $OPTARG =~ add|edit|create|print ]] && _log 4 "$OPTARG not allowed"
+				_warn "using alternative studio name '$_studioDirName'"
 				;;
  	    s)
-				#_log 0 "${FUNCNAME[0]}: enabling silent mode"
+				_log 0 "${FUNCNAME[0]}: enabling silent mode"
  	      _SILENT=true
 				;;
 			d)
 				_DEBUG=true
-				#_log 0 "${FUNCNAME[0]}: enabled debug mode"
+				_log 0 "${FUNCNAME[0]}: enabled debug mode"
 				;;
 			l)
 				_LOG=true
-				#_log 0 "${FUNCNAME[0]}: enabled log mode"
+				_log 0 "${FUNCNAME[0]}: enabled log mode"
 				;;
 			v)
 				echo "${green}verion${reset}: beta"; exit 0
@@ -244,40 +266,44 @@ _getOpts () {
 	# export a paired down parameter string flags and args read within this
 	# function will be discarded, leaving behind only that which the rest needs
 	export _workingParams=$*
-	#_log 0 "${FUNCNAME[0]}: _LOG=${_LOG}"
-	#_log 0 "${FUNCNAME[0]}: _SILENT=${_SILENT}"
-	#_log 0 "${FUNCNAME[0]}: _DEBUG=${_DEBUG}"
+	_log 0 "${FUNCNAME[0]}: _LOG=${_LOG}"
+	_log 0 "${FUNCNAME[0]}: _SILENT=${_SILENT}"
+	_log 0 "${FUNCNAME[0]}: _DEBUG=${_DEBUG}"
 	return
 }
 
 _getSubcommand() {
 	# look for the first subcommand and set _subCommand accordingly
 	while ((${#})); do
-		#_log 0 "${FUNCNAME[0]}: reading parameter '${1}'"
+		_log 0 "${FUNCNAME[0]}: reading parameter '${1}'"
 		case $1 in
 			help)
 				_printInfo ; _printUsage; exit 0
 				;;
 			add)
-				#_log 0 "${FUNCNAME[0]}: '$1' called, checking for $1 flags now"
+				_log 0 "${FUNCNAME[0]}: '$1' called, checking for $1 flags now"
 				_subCommand=$1
 				_getAddOpts
 				return
 				;;
 			edit)
-				#_log 0 "_getSubcommand(): '$1' called, checking for $1 flags"
+				_log 0 "_getSubcommand(): '$1' called, checking for $1 flags"
 				_subCommand=$1
 				_getEditOpts
 				return
 				;;
 			create)
-				#_log 0 "_getSubcommand(): '$1' called, checking for $1 flags"
+				_log 0 "_getSubcommand(): '$1' called, checking for $1 flags"
 				_subCommand=$1
 				_getCreateOptions
 				return
 				;;
 			list)
-				#_log 0 "_getSubcommand: $1"
+				_log 0 "_getSubcommand: $1"
+				_subCommand=$1
+				return
+				;;
+			inspect)
 				_subCommand=$1
 				return
 				;;
@@ -315,32 +341,57 @@ _getSubcommand() {
 	done
 }
 
+_setEnv() {
+	# set (and print) the environment
+	_info "setting up environment now"
+	_studioDir="$(dirname ~/.)/${_studioDirName}"
+	_germDir="${_studioDir}/${_germDirName}"
+	_germGitDisk="${_germDir}/.gitdisk"
+	_logFile="${_germDir}/germ.log"
+	_gitWT="git --git-dir=${_germGitDisk} --work-tree=${_germDir}"
+	_git="git --git-dir=${_germGitDisk}"
+	[[ -f "${_logFile}" ]] && _canLog=true
+	_log 0 "self=$self"
+	_log 0 "_studioDirName=$_studioDirName"
+	_log 0 "_studioDir=$_studioDir"
+	_log 0 "_germDirName=$_germDirName"
+	_log 0 "_germDir=$_germDir"
+	_log 0 "_germGitDisk=$_germGitDisk"
+	_log 0 "_logFile=$_logFile"
+	_log 0 "_gitWT=$_gitWT"
+	_log 0 "_git=$_git"
+	_log 0 "git version= $($_git -v)"
+	_log 0 "_canLog=${_canLog:-false}"
+	_log 0 "_user=${_user:-unset}"
+	_log 0 "_DEBUG=$_DEBUG"
+	_log 0 "_SILENT=$_SILENT"
+	_log 0 "_LOG=$_LOG"
+}
+
 _isEnvSufficient() {
 	# check for required tools, report accordingly
 	# TODO add recommended checks with _missing{0:name,1:name}
 	local _sufficient=true
 	for _required in "${_requiredCommands[@]}"; do
 		if ! hash "${_required}" 2>/dev/null; then
-			#_log 3 "${FUNCNAME[0]}: ${_required} not found"
+			_log 3 "${FUNCNAME[0]}: ${_required} not found"
 			_sufficient=false
-		#else
-		#	_log 0 "${FUNCNAME}: ${_required} found"
+		else
+			_log 0 "${FUNCNAME}: ${_required} found"
 		fi
 	done
 	# check for germ dir (unless we are running create...this could use some
 	# cleaning for clarification)
 	# if there is no germ dir and this
 	if [ ! -d "${_germDir}" ]; then
-		#[ -z "${_subCommand:-}" ] && { _log 3 "run create first" ; return 1 }
 		if [ -z "${_subCommand:-}" ]; then
-			#_log 3 "found no ${_germDir}; run 'germ create' first"
+			_log 3 "found no ${_germDir}; run 'germ create' first"
 		 	return 1
 		elif [ ! ${_subCommand:=} = "create" ]; then
-			#_log 3 "found no ${_germDir}; run 'germ create' first"
+			_log 3 "found no ${_germDir}; run 'germ create' first"
 			_sufficient=false
 		fi
 	fi
-	# TODO this little construct isn't correct:
 	[ ${_sufficient} = true ] && return 0 || return 1
 }
 
@@ -356,7 +407,7 @@ _getAddOpts() {
 		case ${flag} in
 			i)
 				# inline add (no editor invoked)
-				#_log 0 "enabled inline mode"
+				_log 0 "enabled inline mode"
 				_inline=true
 				;;
 			?)
@@ -377,7 +428,7 @@ _getEditOptions() {
 		case ${flag} in
 			f)
 				_forceFormat=true
-				#_log 1 "${FUNCNAME[0]}: force mode enabled"
+				_log 1 "${FUNCNAME[0]}: force mode enabled"
 				;;
 			?)
 				_warn "${FUNCNAME[0]}: unknown flag -$OPTARG"; exit 1
@@ -397,10 +448,10 @@ _getCreateOptions() {
 		case ${flag} in
 			f)
 				_forceFormat=true
-				#_log 1 "${FUNCNAME[0]}: force mode enabled"
+				_log 1 "${FUNCNAME[0]}: force mode enabled"
 				;;
 			?)
-				#_log 3 "${FUNCNAME[0]}: unknown flag -$OPTARG"; exit 1
+				_log 3 "${FUNCNAME[0]}: unknown flag -$OPTARG"; exit 1
 				exit 1
 				;;
 		esac
@@ -442,8 +493,8 @@ _status() {
 	_log 1 "studio path: ${_studioDir}"
 	_log 1 "germ path: ${_germDir}"
 	_log 1 "germ gitdisk: ${_germGitDisk}"
-	_log 1 "germ user uuid: ${_userUUID}"
-	_log 1 "germ current source: ${_currentSource}"
+	_log 1 "germ user uuid: ${_userUUID:-}"
+	_log 1 "germ current source: ${_currentSource:-}"
 	${_git} commit-graph verify
 	[ $? = 0 ] || _log 3 "'git commit-graph verify' returned an error"
 	_log 1 "'git rev-parse --show-object-format HEAD'"
@@ -495,7 +546,7 @@ _status() {
 # $ git config --global alias.graph \
 #  "log --graph --all --format='%h %s%n        (%an, %ar)%d' --abbrev-commit"
 
-_test() {
+__test() {
 	# attempt to repair a corrupt index
 	# currently we see:
 	# $ git --git-dir=/home/jason/studiodev/germ/.gitdisk diff-index --cached HEAD
@@ -667,34 +718,38 @@ _add() {
 }
 
 _create() {
+	# create a new germ database
 	local _gitUserName=$(git config --global --get user.name)
 	local _gitUserEmail=$(git config --global --get user.email)
 	local _gitDisk=${_germGitDisk}
   trap _irishExit SIGINT
 	_prompt "enter studio name ["${_studioDirName}"] "
 	read _studioName
-	[ -z ${_studioName} ] || _studioDirName="${_studioName}"
-	_prompt "enter studio path ["${_studioDir}"] "
-	read _studioPath
-	[ -z ${_studioPath} ] || _studioDir="${_studioPath}"
+	[ -z "${_studioName}" ] || _studioDirName="${_studioName}"
+	#_prompt "enter studio path ["${_studioDir}"] "
+	#read _studioPath
+	#[ -z ${_studioPath} ] || _studioDir="${_studioPath}"
 	_prompt "enter germ name ["${_germDirName}"] "
 	read _germName
 	[ -z ${_germName} ] || _germDirName="${_germName}"
-	_prompt "enter germ gitdisk name ["${_germGitDisk}"] "
-	read _germGit
-	[ -z ${_germGit} ] || _germGitDisk="${_germGit}"
+	#_prompt "enter germ gitdisk name ["${_germGitDisk}"] "
+	#read _germGit
+	#[ -z ${_germGit} ] || _germGitDisk="${_germGit}"
 	_prompt "enter preferred username [${_gitUserName}] "	
 	read _userName
 	[ -z ${_userName} ] && _userName="${_gitUserName}"
 	_prompt "enter preferred email [${_gitUserEmail}] "	
 	read _userEmail
 	[ -z ${_userEmail} ] && _userEmail="${_gitUserEmail}"
-	_log 0 "studio dir name: ${_studioDirName}"
-	_log 0 "studio path: ${_studioDir}"
-	_log 0 "germ path: ${_germDir}"
-	_log 0 "germ gitdisk: ${_germGitDisk}"
-	_log 0 "germ user name: ${_userName}"
-	_log 0 "germ user email: ${_userEmail}"
+	_setEnv
+	_info "studio dir name: ${_studioDirName}"
+	_info "studio path: ${_studioDir}"
+	_info "germ path: ${_germDir}"
+	_info "germ gitdisk: ${_germGitDisk}"
+	_info "germ user name: ${_userName}"
+	_info "germ user email: ${_userEmail}"
+	read -rsn1 -p "proceed? (y/n)" _yn
+	[[ "$_yn" = "n" ]] && { _warn "aborting" ; exit ; }
 	[ ! -d "${_germDir}" ] && mkdir -p "${_germDir}"
 	if [ ${_DEBUG} = "true" ]; then
 		gitdisk -d create -b ${_germGitDisk}
@@ -740,12 +795,8 @@ _sizer() {
 	git-sizer --verbose
 }
 
-_makeDirty() {
-	# test function to intentionally leave a mess
-	echo "TEST 1: PUT a blob in without a map"
-	echo "TEST 2: PUT a blob, map key, forget to map tags"
-	echo "TEST 3: other atomic tests?"
-	echo "TODO: DETECT condition...clean and clear programatically"
+_inspect() {
+	tig -C${_germGitDisk}
 }
 
 
@@ -795,28 +846,218 @@ _getNewKey() {
 	echo "${_keyPath}"
 }
 
-_uuidGet() {
-	# arg 1: user:email string [optional...uses 'git config' otherwise]
-	# using hash-object, generate a unique uuid
-	# truncated, it serves the u/user field and the primary key as $uuid.$seconds
-	# on the possibility of collision...printf "4^16 = %'d\n" $(echo "4^16" | bc)
-	# WRONG...its 16^4 which is a whole lot smaller (65,536)
+_test() {
+	#_uuidGen || echo "CANT"
+	#_uuidGen "jkl:jason@bloom.us"
+	#_uuidGen "Jason Lindemuth:jason@bloom.us"
+	#_uuidGen "jason lindemuth:jason@bloom.us"
+	#_uuidGen "periplume:periplume@gmail.com"
+	#_uuidGen "j:a@b.c"
+	#_mapEmpty "u/397d/self"
+	#_mapEmpty "u/397/self"
+	#_mapEmpty "u/39/self"
+	#_uuidSet
+	#_uuidGet || echo NNN
+	#echo _uuidGetUnique
+	#_uuidGetUnique 397db75f0d9b7dbf595db447b09c536a0edaac07
+	#_uuidGetUnique e291707cbe17f3c6cd5a64993598142c280c238c
+	#_uuidGetUnique 0cb834f2fe087b425b0cbb525643c23532663119
+	#_doesUserExist 19140d16717ad524c9acee5ff9442daa2c580526 || echo "no1"
+	#_doesUserExist 77c5f9cbbe8881fd6aa036b0024ec48608c813ad || echo "no2"
+	#_doesUserExist 397db75f0d9b7dbf595db447b09c536a0edaac07 || echo "no3"
+	#_doesUserExist e291707cbe17f3c6cd5a64993598142c280c238c || echo "no4"
+	echo "WORK IT OUT"
+	#_u=$(_uuidGen "dummy:dumb@dumber.com")
+	#echo "_userUUID=$_u"
+	#_doesUserExist $_u && echo "$_u is NOT new"
+	#_userAdd $_u "dummy:dumb@dumber.com"
+	#_uuidGen
+	_userPrint
+	_userAdd "dumbdumb:dumb@dumber.com" 
+	echo "CHECKING e291"
+	_userPrint e291
+	echo "CHECKING 3c7c"
+	_userPrint 3c7c
+	echo "CHECKING 32"
+	_userPrint 32
+	echo "checking existing"
+	_userString="jkl:jason@bloom.us"
+	_userAdd "$_userString" || _warn "user '$_userString' exists"
+	echo "checking no arg"
+	_userAdd || _warn "useradd failed"
+	_userAdd "jason lindemuth:jason@bloom.us"
+}
+
+# TODO
+# for database maintenenace...check for dangling blobs
+# brute force
+# git gc 
+
+##########
+# _user
+##########
+# global var: _user = user "handle" (truncated hash)
+# global var: _userUUID = full user hash
+# 
+# methods
+# _uuidGen				generate the user uuid (_userUUID)
+# _doesUserExist	check full _userUUID with _printBlob (no user match)
+# _userAdd				using _userUUID, find the shortest match and create user
+# _userSet				set the global _user and u/$_user/current
+# _userPrint			print user details
+
+#_userSet() {
+#	# arg 1 = _user [optional]
+#	# check for global var _user (override)
+#	# validate this user...return if no such user exists
+#	local _u
+#	local _uuid
+#	# if no arg supplied
+#	if [ -z "${1:-}" ]; then
+#		# and if _user was not set (manually)
+#		if [ -z "${_user}" ]; then
+#			# try to get the user from u/*/current
+#			_u=$(_getKeyValue u/*/current)
+#			_uuid=$(_getBlobID u/${_u}/self)
+#		# _user was set (manually) in the script
+#		else
+#			_u=$_user
+#			if _doesKeyExist "u/${_u}/self"; then
+#				_uuid=$(_getBlobID u/${_u}/self)
+#			else
+#				_warn "$_user is not valid"
+#				exit
+#			fi
+#		fi
+#	# _user was supplied as $1
+#	else
+#		# UNFINISHED
+#		_u=$1
+#	fi
+#}
+
+_userPrint() {
+	# arg 1 = _user [optional]
+	local _l_user=${1:-${_user:-unset}}
+	local _l_name
+	local _l_email
+	local _l_us
+	_info "supplied: '${1:-}'"
+	_info "checking for '${_l_user}'"
+	_info "global: _user= '${_user:-unset}'"
+	_info "global: _userUUID= '${_userUUID:-NULL}'"
+	_info "index: user '${_l_user}' _userUUID= '$(_getBlobID u/${_l_user}/self)'"
+	_info "index: 'current' user= $(_getKeyValue u/*/current)"
+	_l_us=$(_readKey u/${_l_user}/self)
+	_info "index: user name= '${_l_us%%:*}'"
+	_info "index: user email= '${_l_us##*:}'"
+}
+
+_userAdd() {
+	# arg 1 = "user:email"
+	# get the userUUID
+	# check if the user exists
+	# if not, find the shortest user handle
+	# add the blob ; get the blobID
+	# map the blob
+	# check for u/*/alpha
+	# mapEmpty if first user
+	# _mapBlob /u/$truncation/self -> blobID
+	local _minUserLength=3
+	local _blobID
+	local _userUUID
+	local _user
+	local _userName
+	local _userEmail
+	local _userString="${1:-}"
+	[ -z "${1:-}" ] && { _warn "no user name supplied" ; return 1 ; }
+	# validate user string ( "name string" : "email string")
+	_userName="${_userString%%:*}"
+	_userEmail="${_userString##*:}"
+	[ "${_userString}" = "${_userName}:${_userEmail}" ] || { _warn "'${_userString}' malformed" ; return 1 ; }
+	# generate UUID
+	_userUUID=$(_uuidGen "${_userString}")
+	_doesUserExist "${_userUUID}" && { _warn "'${_userUUID} ${_userString}' exists" ; return 1 ; }
+	# write the unique user string
+	_blobID=$(_writeBlob "${_userString}")
+	# look for shortest user handle
+	while _doesKeyExist "u/${_blobID:0:${_minUserLength}}/self"; do
+		((_minUserLength=_minUserLength+1))
+	done
+	# map the user to u/
+	_user=${_blobID:0:${_minUserLength}}
+	_mapBlob ${_blobID} "u/${_user}/self"
+	# return the user name
+	echo $_user
+}
+
+_doesUserExist() {
+	# arg 1 = _userUUID (full hash)
+	_printBlob "${1}" || return 1
+}
+
+_uuidSet() {
+	# set (or validate) the global var _user
+	local _user=	#unset global for testing
+	local _minUserLength=2
+	# if global _user is not set
+	if [ -z ${_user} ]; then
+		_userUUID=$(_uuidGen)
+		echo "got ${_userUUID}"
+		echo "min trunate ${_userUUID:0:${_minUserLength}}"
+		# check if user exists (using _userMinLength to find shortest unique key)
+		while _doesKeyExist "u/${_userUUID:0:${_minUserLength}}/self"; do
+			echo "matched ${_userUUID:0:${_minUserLength}}"
+			((_minUserLength=_minUserLength+1))
+		done
+		echo "unique ${_userUUID:0:${_minUserLength}}"
+		#export _user=${_userUUID:0:4}
+	else
+		_doesKeyExist "c/${_user}/self" || echo "$_user exists"
+		# _user was set manually
+		# validate whether _user exists in u/$_user
+	fi
+}
+
+_uuidGen() {
 	local _u
 	local _e
 	local userstring
 	local uuid
 	if [[ -z "${1:-}" ]]; then
-		_u=$(${_git} config --get user.name)
-		_e=$(${_git} config --get user.email)
+		_u=$(${_git} config --get user.name &>/dev/null) || return 1
+		_e=$(${_git} config --get user.email &>/dev/null) || return 1
 		userstring="${_u}:${_e}"
 	else
 		userstring="${1}"
 	fi
-	uuid=$(echo "${userstring}" | ${_git} hash-object -w --stdin)
+	uuid=$(echo "${userstring}" | ${_git} hash-object --stdin)
+	echo ${uuid}
+}
+
+# OLD FUNCTIONS
+_uuidGet() {
+	# arg 1: user:email string [optional...uses 'git config' otherwise]
+	# using hash-object, generate a unique uuid
+	# truncated, it serves the u/user field and the primary key as $uuid.$seconds
+	local _u
+	local _e
+	local userstring
+	local uuid
+	if [[ -z "${1:-}" ]]; then
+		_u=$(${_git} config --get user.name &>/dev/null) || return 1
+		_e=$(${_git} config --get user.email &>/dev/null) || return 1
+		userstring="${_u}:${_e}"
+	else
+		userstring="${1}"
+	fi
+	uuid=$(echo "${userstring}" | ${_git} hash-object --stdin)
+	echo $_u $_e
 	echo ${uuid}
 }
 
 _setUserUUID() {
+	local _minUserLength=2
 	# set the global var used in file mapping (if it is empty)
 	if [ -z ${_user} ]; then
 		# if running create...just leave it empty (it will get set in _create()
@@ -889,7 +1130,7 @@ _readBlob() {
 _printBlob() {
 	# arg 1 = blob ID
 	# print the contents of the blob to stdout
-	${_git} cat-file -p ${1} || return 1
+	${_git} cat-file -p ${1} 2>/dev/null || return 1
 }
 
 _mapBlob() {
@@ -983,6 +1224,9 @@ __isIndexClean() {
 # SOURCE
 ################
 
+# source is an exclusive category...an entity (blob or germ) cannot be a member
+# of more than one source.  an entity can be without a source (ie source=null)
+# it can also be called 'context'
 # the 'source' is a generic organizing category and can be used in a variety of
 # ways.  when it is set, all new germ entries will be cataloged (logged) into
 # the source log c/$source/self.catalog
@@ -992,6 +1236,19 @@ __isIndexClean() {
 # methods
 # _addToSource		add a blob (key: a/2022/10/01/$uuid.$seconds) to
 # c/$source/self.catalog file
+#
+# the above is in the context of a blob
+#
+# in the context of the ui, $source can be:
+# 1. unset				_currentSource=()
+# 2. set to one		_currentSource=("lgb-12-jan-22")
+# 3. set to many	_currentSource=("lgb-12-jan-22" "lgb-7-jun-22")
+# 4. set to "set" 	future idea: define a super-set
+#
+# in the context of _add()
+# when _currentSource=(), blob is added without a source
+# when _currentSource=(x), blob is added to source=x
+# when _currentSource=(x,y), user is prompted to choose x/y or null
 
 _addToSource() {
 	# arg 1 = source name
@@ -1155,7 +1412,7 @@ export -f _printSourceEntities
 
 _getSourceCount() {
 	# arg 1 = source
-	_printSourceEntities ${1} | wc -l
+	_printSourceEntities ${1:-} | wc -l
 }
 export -f _getSourceCount
 
@@ -1169,12 +1426,6 @@ export -f _getSourceCount
 # source description: arbitrary text describing source
 
 
-###############
-###### SOURCE
-###############
-# TODO decide and define how to have UNSET source...and what that means or
-# whether all entries always have a source...i think no source can be an
-# attribute...like a loose piece of paper
 #
 # TODO future _source operations...merge notebooks, split notebooks, archive,
 # and print
@@ -1203,7 +1454,7 @@ _source () {
     r) rename current source
     a) add new source
     m) merge two sources (future)
-    h) help
+    ?) help
     q) return to germ
 
 "
@@ -1231,7 +1482,7 @@ _source () {
 		_newSourceName=$(_getSourceList | fzf ${_fzfBack:-} ${_fzfEsc} ${_fzfPrompt} "${_fzfColor}" "${_fzfHeader}" "${_fzfPreview}")
 		echo ${_newSourceName}
 	}
-	while read -s -n 1 -p"$(_prompt 'enter selection [? for help]')" _mainSelection; do
+	while read -r -s -n 1 -p"$(_prompt 'enter selection [? for help]')" _mainSelection; do
 		case $_mainSelection in
  			c)
 				_setSource $(_chooseSource) || _warn "aborted source change"
@@ -1267,17 +1518,34 @@ _source () {
 				_showOptions
 				;;
 			$'\e')
-				_warn "escaping"
-				echo
-				return
-				# TODO improve the error handling here...detect all characters not
-				# expected including all escape characters quietly and elegantly
+				#_warn "escape key detected"
+				# read and ignore escape sequences (including esc)
+				read -rsn1 -t .002 tmp || { _warn "esc key not allowed" ; continue ; }
+				if [[ "$tmp" == "[" ]]; then
+					read -rsn1 -t .002 tmp || _warn "can't read any more"
+					case "$tmp" in
+						# ignore arrow keys
+						"A"|"B"|"C"|"D") { _warn "arrow keys not allowed" ;  } ;; 
+						# ignore insert and delete
+						"2"|"3") { _warn "insert and delete keys not allowed" ; } ;; 
+						# ignore home and end
+						"H"|"F") { _warn "home and end keys not allowed" ; } ;; 
+						# ignore all the rest
+						*) { _warn "key '$tmp' not allowed" ; } ;;
+					esac
+				else
+					_warn "ignoring escape key '$tmp'"
+				fi
+				# flush out stdin if necessary
+				read -rsn6 -t .002 || continue 
+				;;
+			$'\177')
+				# catch control characters
+				#_warn "control character detected; ignoring"
+				continue
 				;;
 			?)
-				[[ -z ${_mainSelection:-} ]] && continue 
-				# this erases the current line
-				printf '\033[1A\033[K'
-				_warn "wrong selection [${_mainSelection}]; try again"
+				_warn "wrong selection ['${_mainSelection}']; try again"
 				;;
 			esac
 		done
@@ -1287,6 +1555,8 @@ _source () {
 	### MENU FUNCTIONS
 	##########################
 	_renameSource() {
+				# TODO add a default into the fzf query string here --with the existing
+				# source name
 		local _oldName="${1}"
 		local _newName
 		_interactiveSourcePicker _newName
@@ -1685,12 +1955,12 @@ _irishExit() {
   _warn "ctrl-c detected; to resume, press R, to quit, press ENTER"
   read -s -t 15 -n 1 _ANS
   if [[ ${_ANS:-n} = 'R' ]]; then
-    #return
-		_info "resuming"
+    return
+		#_info "resuming"
   else
-   	#_log 4 "user requested exit with ctrl-c"
-		#exit 1
-		return 1
+   	_log 4 "user requested exit with ctrl-c"
+		exit 1
+		#return 1
   fi
 }
 
@@ -1702,12 +1972,17 @@ main() {
 	_getSubcommand $_workingParams
 	_log 0 "${FUNCNAME[0]}: _subCommand: ${_subCommand:-}"
 	_log 0 "${FUNCNAME[0]}: remaining args: $_workingParams"
-	# validate the environment first
+	# setup the environment after processing all command line parameters
+	_setEnv
+	# validate the environment
 	_isEnvSufficient || _log 4 "cannot run until these problems are resolved"
-	# set the global user
-	_setUserUUID || _log 4 "cannot set the user hash string"
+	# set the global _user var
+	#_setUserUUID || _log 4 "cannot set the user hash string"
 	# get and set the current source notebook
-	_currentSource=$(_getSource) 
+	#_currentSource=$(_getSource) 
+	#_warn "current source= $_currentSource"
+	# TODO move this to the approprite location...source only matters to germ
+	# functions
 	# run germ shell if no arguments
 	# TODO figure out how to pipe input to germ without triggering the shell
 	[ -z "${_subCommand:-}" ] && _shell
@@ -1715,4 +1990,3 @@ main() {
 	[ -n "${_subCommand:-}" ] && eval _"${_subCommand}" || exit
 }
 main "${@}"
-
