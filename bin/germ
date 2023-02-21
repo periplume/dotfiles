@@ -76,13 +76,145 @@ prompt=$(tput setab 5; tput setaf 7)
 
 
 # user output: types
+# name		description														display
+#----------------------------------------------------------------------------
+# debug		verbose																cyan
 # info		information only											blue text, green bg
-# warn		warning																black text, yellow bg
-# error																					white text, red bg
+# warn		warning (abnormal)										black text, yellow bg
+# error		not allowed														white text, red bg
 # fatal		error and exiting (out of trap)				black text, red bg, bold text?
-# input		requires input												white text, cyan bg
-# always expect fresh new line
-# exception...after input...in which case, take care of that immediately
+# ask			ask user for input										white text, cyan bg
+#	always expect fresh new line
+# exception...after ask...in which case, take care of that immediately
+# suppress if _SILENT=true
+#
+# call as
+# _warn "message"
+# _info "message"
+# or?
+# _log warn "message"
+# _log info "message"
+
+
+# make _fLOG a "collapsing function"
+# the static features: (global variables)
+#
+# the three main determinants:
+# _SILENT= true | false
+# _LOG= true | false
+# _DEBUG= true | false
+#
+# subordinate dependencies:
+# _canLog= true | false
+# _logFile= "path to file"
+
+_fLOG() {
+	# collapsing function...sets up according to the static determinants
+	# creates all log functions
+	# log function usage as simple as:
+	# _info "the message contents" 
+	local _log=0
+	local _console=0
+	local _color=0
+	[[ "$_SILENT" = "false" ]] && _console=1
+	[[ "$_LOG" = "true" && "$_canLog" = "true" ]] && _log=1
+	[[ $(tput colors) ]] && _color=1
+	#
+	# set up colors	
+	_cDebug=$(tput setaf 6)
+	_cInfo=$(tput setaf 2)
+	_cWarn=$(tput setaf 11)
+	_cError=$(tput setaf 1)
+	_cAsk=$(tput setaf 5; tput bold)
+	_cReset=$(tput sgr0)
+	# create 5 log functions based on static determinants above
+	#
+	# CONSOLE AND LOG
+	if [[ $_console = 1 && $_log = 1 ]]; then
+		_debug() {
+			[[ "$_DEBUG" = "false" ]] && return
+			local _timeStamp=$(date +%s.%N)
+			printf '%s %s\n' "${_cDebug}DEBUG${_cReset}" "${@}"
+			printf '%s %s %s\n' "$_timeStamp" "${self} ${_cDebug}DEBUG${_cReset}" "${@}" >>${_logFile}
+		}
+		_info() {
+			local _timeStamp=$(date +%s.%N)
+			printf '%s %s\n' "${_cInfo}INFO${_cReset}" "${@}"
+			printf '%s %s %s\n' "$_timeStamp" "${self} ${_cInfo}INFO${_cReset}" "${@}" >>${_logFile}
+		}
+		_warn() {
+			local _timeStamp=$(date +%s.%N)
+			printf '%s %s\n' "${_cWarn}WARN${_cReset}" "${@}"
+			printf '%s %s %s\n' "$_timeStamp" "${self} ${_cWarn}WARN${_cReset}" "${@}" >>${_logFile}
+		}
+		_error() {
+			local _timeStamp=$(date +%s.%N)
+			printf '%s %s\n' "${_cError}ERROR${_cReset}" "${@}"
+			printf '%s %s %s\n' "$_timeStamp" "${self} ${_cError}ERROR${_cReset}" "${@}" >>${_logFile}
+		}
+		_ask() {
+			local _timeStamp=$(date +%s.%N)
+			printf '%s %s' "${_cAsk}USER${_cReset}" "${@}"
+			printf '%s %s %s\n' "$_timeStamp" "${self} ${_cAsk}USER${_cReset}" "${@}" >>${_logFile}
+		}
+	# LOG ONLY
+	elif [[ $_console = 0 && $_log = 1 ]]; then
+		_debug() {
+			[[ "$_DEBUG" = "false" ]] && return
+			local _timeStamp=$(date +%s.%N)
+			printf '%s %s %s\n' "$_timeStamp" "${self} ${_cDebug}DEBUG${_cReset}" "${@}" >>${_logFile}
+		}
+		_info() {
+			local _timeStamp=$(date +%s.%N)
+			printf '%s %s %s\n' "$_timeStamp" "${self} ${_cInfo}INFO${_cReset}" "${@}" >>${_logFile}
+		}
+		_warn() {
+			local _timeStamp=$(date +%s.%N)
+			printf '%s %s %s\n' "$_timeStamp" "${self} ${_cWarn}WARN${_cReset}" "${@}" >>${_logFile}
+		}
+		_error() {
+			local _timeStamp=$(date +%s.%N)
+			printf '%s %s %s\n' "$_timeStamp" "${self} ${_cError}ERROR${_cReset}" "${@}" >>${_logFile}
+		}
+		_ask() {
+			local _timeStamp=$(date +%s.%N)
+			printf '%s %s %s\n' "$_timeStamp" "${self} ${_cAsk}USER${_cReset}" "${@}" >>${_logFile}
+		}
+	# CONSOLE ONLY
+	elif [[ $_console = 1 && $_log = 0 ]]; then
+		_debug() {
+			[[ "$_DEBUG" = "false" ]] && return
+			printf '%s %s\n' "${_cDebug}DEBUG${_cReset}" "${@}"
+		}
+		_info() {
+			printf '%s %s\n' "${_cInfo}INFO${_cReset}" "${@}"
+		}
+		_warn() {
+			printf '%s %s\n' "${_cWarn}WARN${_cReset}" "${@}"
+		}
+		_error() {
+			printf '%s %s\n' "${_cError}ERROR${_cReset}" "${@}"
+		}
+		_ask() {
+			printf '%s %s' "${_cAsk}USER${_cReset}" "${@}"
+		}
+	else
+		# do nothing
+		_debug() { : ; }
+		_info() { : ; }
+		_warn() { : ; }
+		_error() { : ; }
+		_ask() { : ; }
+	fi
+}
+
+_test() {
+	_debug "debug: debug info"
+	_info "info: hello world"
+	_warn "warning: warning"
+	_error "error: error"
+	_ask "ask: ask me?"
+}
 
 user=$(tput setab 6; tput setaf 7)
 _prompt() {
@@ -343,14 +475,14 @@ _getSubcommand() {
 
 _setEnv() {
 	# set (and print) the environment
-	_info "setting up environment now"
+	#_info "setting up environment now"
 	_studioDir="$(dirname ~/.)/${_studioDirName}"
 	_germDir="${_studioDir}/${_germDirName}"
 	_germGitDisk="${_germDir}/.gitdisk"
 	_logFile="${_germDir}/germ.log"
 	_gitWT="git --git-dir=${_germGitDisk} --work-tree=${_germDir}"
 	_git="git --git-dir=${_germGitDisk}"
-	[[ -f "${_logFile}" ]] && _canLog=true
+	[[ -f "${_logFile}" ]] && _canLog=true || _canLog=false
 	_log 0 "self=$self"
 	_log 0 "_studioDirName=$_studioDirName"
 	_log 0 "_studioDir=$_studioDir"
@@ -846,48 +978,6 @@ _getNewKey() {
 	echo "${_keyPath}"
 }
 
-_test() {
-	#_uuidGen || echo "CANT"
-	#_uuidGen "jkl:jason@bloom.us"
-	#_uuidGen "Jason Lindemuth:jason@bloom.us"
-	#_uuidGen "jason lindemuth:jason@bloom.us"
-	#_uuidGen "periplume:periplume@gmail.com"
-	#_uuidGen "j:a@b.c"
-	#_mapEmpty "u/397d/self"
-	#_mapEmpty "u/397/self"
-	#_mapEmpty "u/39/self"
-	#_uuidSet
-	#_uuidGet || echo NNN
-	#echo _uuidGetUnique
-	#_uuidGetUnique 397db75f0d9b7dbf595db447b09c536a0edaac07
-	#_uuidGetUnique e291707cbe17f3c6cd5a64993598142c280c238c
-	#_uuidGetUnique 0cb834f2fe087b425b0cbb525643c23532663119
-	#_doesUserExist 19140d16717ad524c9acee5ff9442daa2c580526 || echo "no1"
-	#_doesUserExist 77c5f9cbbe8881fd6aa036b0024ec48608c813ad || echo "no2"
-	#_doesUserExist 397db75f0d9b7dbf595db447b09c536a0edaac07 || echo "no3"
-	#_doesUserExist e291707cbe17f3c6cd5a64993598142c280c238c || echo "no4"
-	echo "WORK IT OUT"
-	#_u=$(_uuidGen "dummy:dumb@dumber.com")
-	#echo "_userUUID=$_u"
-	#_doesUserExist $_u && echo "$_u is NOT new"
-	#_userAdd $_u "dummy:dumb@dumber.com"
-	#_uuidGen
-	_userPrint
-	_userAdd "dumbdumb:dumb@dumber.com" 
-	echo "CHECKING e291"
-	_userPrint e291
-	echo "CHECKING 3c7c"
-	_userPrint 3c7c
-	echo "CHECKING 32"
-	_userPrint 32
-	echo "checking existing"
-	_userString="jkl:jason@bloom.us"
-	_userAdd "$_userString" || _warn "user '$_userString' exists"
-	echo "checking no arg"
-	_userAdd || _warn "useradd failed"
-	_userAdd "jason lindemuth:jason@bloom.us"
-}
-
 # TODO
 # for database maintenenace...check for dangling blobs
 # brute force
@@ -896,8 +986,38 @@ _test() {
 ##########
 # _user
 ##########
-# global var: _user = user "handle" (truncated hash)
-# global var: _userUUID = full user hash
+# over-engineered multi-user capability
+# adaptable...user handle is a variable-length truncated string of a hash
+# the multiple users can be pseudonyms (for a single person)
+# or many different users
+# the master a/ index will always merge cleanly
+# the other namespaces may not...by design
+# the concept of "identity" and "pseudonym" interact
+#
+# data
+# user name:			string, can contain spaces, upper, lower, digits ?
+# email address		string, valid email address
+# combined into:	"user name:email address"
+# this is the "pseudonym"
+#
+# external
+# git config					supplies seed data
+# $HOME/.git-config		includeIF statements to:
+# $GERM/.git-config		contains the git user name(s)	
+# 
+# global
+# _userUUID = full hash of pseudonym ("user name:email address") 
+# _user = user "handle" (truncated hash of _userUUID; unique variable-length string)
+#
+# index
+# u/_user/self	-> 	blob containing pseudonym 
+# u/*/current		->	empty blob (unique indicator) default
+# u/*/alpha			->	empty blob for first user
+#
+# settings
+# _minUserLength		defines the shortest possible _user
+# * this may turn out to be a bad design decision unless u/$_user/self is more
+# ephemeral...ie if/when an instance is changed from len=2 to len=3
 # 
 # methods
 # _uuidGen				generate the user uuid (_userUUID)
@@ -905,36 +1025,56 @@ _test() {
 # _userAdd				using _userUUID, find the shortest match and create user
 # _userSet				set the global _user and u/$_user/current
 # _userPrint			print user details
+#
+# use
+# git commit messages
+# composing as pseudonym or anonymous
+# a context that can be used as desired
+# main index for blob naming	a/2023/02/08/$_userUUID.$unixseconds
+# displayed in shell status line (as "_user")
+# can be used to filter
+#
+# future
+# aliasing (to handle email or name change without identity change)
 
-#_userSet() {
-#	# arg 1 = _user [optional]
-#	# check for global var _user (override)
-#	# validate this user...return if no such user exists
-#	local _u
-#	local _uuid
-#	# if no arg supplied
-#	if [ -z "${1:-}" ]; then
-#		# and if _user was not set (manually)
-#		if [ -z "${_user}" ]; then
-#			# try to get the user from u/*/current
-#			_u=$(_getKeyValue u/*/current)
-#			_uuid=$(_getBlobID u/${_u}/self)
-#		# _user was set (manually) in the script
-#		else
-#			_u=$_user
-#			if _doesKeyExist "u/${_u}/self"; then
-#				_uuid=$(_getBlobID u/${_u}/self)
-#			else
-#				_warn "$_user is not valid"
-#				exit
-#			fi
-#		fi
-#	# _user was supplied as $1
-#	else
-#		# UNFINISHED
-#		_u=$1
-#	fi
-#}
+_userSet() {
+	# arg 1 = _user [optional]
+	# check for global var _user (override)
+	# validate this user...return if no such user exists
+	local _u
+	local _uuid
+	# if no arg supplied
+	if [ -z "${1:-}" ]; then
+		# and if global _user is unset
+		if [ -z "${_user:-}" ]; then
+			# try to get the user from u/*/current
+			_u=$(_getKeyValue u/*/current)
+			_uuid=$(_getBlobID u/${_u}/self)
+		# _user was set (manually) in the script
+		else
+			_u=$_user
+			if _doesKeyExist "u/${_u}/self"; then
+				_uuid=$(_getBlobID u/${_u}/self)
+			else
+				_warn "$_user is not valid"
+				exit
+			fi
+		fi
+	# _user was supplied as $1
+	else
+		_u=$1
+		if _doesKeyExist "u/${_u}/self"; then
+			_uuid=$(_getBlobID u/${_u}/self)
+		else
+			_warn "$_user is not valid"
+			exit
+		fi
+	fi
+	export _user=$_u
+	export _userUUID=$_uuid
+	_deleteKey u/*/current
+	_mapEmpty u/$_u/current
+}
 
 _userPrint() {
 	# arg 1 = _user [optional]
@@ -987,6 +1127,7 @@ _userAdd() {
 	# map the user to u/
 	_user=${_blobID:0:${_minUserLength}}
 	_mapBlob ${_blobID} "u/${_user}/self"
+	_doesKeyExist u/*/alpha || _mapEmpty "u/${_user}/alpha" 
 	# return the user name
 	echo $_user
 }
@@ -994,29 +1135,6 @@ _userAdd() {
 _doesUserExist() {
 	# arg 1 = _userUUID (full hash)
 	_printBlob "${1}" || return 1
-}
-
-_uuidSet() {
-	# set (or validate) the global var _user
-	local _user=	#unset global for testing
-	local _minUserLength=2
-	# if global _user is not set
-	if [ -z ${_user} ]; then
-		_userUUID=$(_uuidGen)
-		echo "got ${_userUUID}"
-		echo "min trunate ${_userUUID:0:${_minUserLength}}"
-		# check if user exists (using _userMinLength to find shortest unique key)
-		while _doesKeyExist "u/${_userUUID:0:${_minUserLength}}/self"; do
-			echo "matched ${_userUUID:0:${_minUserLength}}"
-			((_minUserLength=_minUserLength+1))
-		done
-		echo "unique ${_userUUID:0:${_minUserLength}}"
-		#export _user=${_userUUID:0:4}
-	else
-		_doesKeyExist "c/${_user}/self" || echo "$_user exists"
-		# _user was set manually
-		# validate whether _user exists in u/$_user
-	fi
 }
 
 _uuidGen() {
@@ -1033,48 +1151,6 @@ _uuidGen() {
 	fi
 	uuid=$(echo "${userstring}" | ${_git} hash-object --stdin)
 	echo ${uuid}
-}
-
-# OLD FUNCTIONS
-_uuidGet() {
-	# arg 1: user:email string [optional...uses 'git config' otherwise]
-	# using hash-object, generate a unique uuid
-	# truncated, it serves the u/user field and the primary key as $uuid.$seconds
-	local _u
-	local _e
-	local userstring
-	local uuid
-	if [[ -z "${1:-}" ]]; then
-		_u=$(${_git} config --get user.name &>/dev/null) || return 1
-		_e=$(${_git} config --get user.email &>/dev/null) || return 1
-		userstring="${_u}:${_e}"
-	else
-		userstring="${1}"
-	fi
-	uuid=$(echo "${userstring}" | ${_git} hash-object --stdin)
-	echo $_u $_e
-	echo ${uuid}
-}
-
-_setUserUUID() {
-	local _minUserLength=2
-	# set the global var used in file mapping (if it is empty)
-	if [ -z ${_user} ]; then
-		# if running create...just leave it empty (it will get set in _create()
-		[ "${_subCommand:-}" = create ] && return 0
-		# otherwise, set the global var
-		_userUUID=$(_uuidGet)
-		export _user=${_userUUID:0:4}
-	fi
-	# TODO change the UUID to a variable-length string, with a min of 1-4 so that
-	# in very small environments one can choose to be 'c' or 'e2'...ans when a new
-	# user hash collides...increase the user string by as many characters as
-	# necessary to make unique
-	# this solves (i think) any collision problem, either with the potential
-	# merging of germs from 2 users as well as the uuids...although a merge of 2
-	# would potentially find two uuids matching...in which case much modification
-	# would be necessary...but that condition is way too far out to worry
-	# about...
 }
 
 ######################################
@@ -1249,6 +1325,11 @@ __isIndexClean() {
 # when _currentSource=(), blob is added without a source
 # when _currentSource=(x), blob is added to source=x
 # when _currentSource=(x,y), user is prompted to choose x/y or null
+#
+# future
+# add a source "type" value
+# c/$source/self.type (or type.VALUE and use emptyblob)
+# eg, indexcards, notebook, lecture, marginalia, loose, iphone, etc
 
 _addToSource() {
 	# arg 1 = source name
@@ -1974,10 +2055,12 @@ main() {
 	_log 0 "${FUNCNAME[0]}: remaining args: $_workingParams"
 	# setup the environment after processing all command line parameters
 	_setEnv
+	# set up logging functions
+	_fLOG
 	# validate the environment
 	_isEnvSufficient || _log 4 "cannot run until these problems are resolved"
 	# set the global _user var
-	#_setUserUUID || _log 4 "cannot set the user hash string"
+	_userSet
 	# get and set the current source notebook
 	#_currentSource=$(_getSource) 
 	#_warn "current source= $_currentSource"
