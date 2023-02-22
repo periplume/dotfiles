@@ -19,3 +19,7 @@
 	path = /home/jason/studio/.gitconfig-studio
 [includeif "gitdir:/home/jason/studio/germ/.gitdisk"]
 	path = /home/jason/studio/.gitconfig-studio
+[includeif "gitdir:/home/jason/studiodev/blush/.gitdisk"]
+	path = /home/jason/studiodev/.gitconfig-studio
+[includeif "gitdir:/home/jason/studiodev/blush"]
+	path = /home/jason/studiodev/blush/.gitconfig

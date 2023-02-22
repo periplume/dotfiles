@@ -2,7 +2,6 @@
 # file: germ
 # source: https://github.com/periplume/dotfiles.git
 # author: jason@bloom.us
-
 # SCRIPT AND SHELL SETTINGS
 set -o errexit  # set -e
 set -o nounset
@@ -57,7 +56,7 @@ self=$(basename $0)
 # debugging and logging settings
 # script debug toggle (set to true to enable default global debugging)
 _DEBUG=false
-# silent mode for scripting (supresses normal output)
+# silent mode for scripting (supresses all output)
 _SILENT=false
 # logging facility (debug always goes here, unless)
 _LOG=false
@@ -91,12 +90,8 @@ prompt=$(tput setab 5; tput setaf 7)
 # call as
 # _warn "message"
 # _info "message"
-# or?
-# _log warn "message"
-# _log info "message"
 
-
-# make _fLOG a "collapsing function"
+# _fLOG creates logging functions based on
 # the static features: (global variables)
 #
 # the three main determinants:
@@ -107,10 +102,16 @@ prompt=$(tput setab 5; tput setaf 7)
 # subordinate dependencies:
 # _canLog= true | false
 # _logFile= "path to file"
+# $(tput colors)
 
 _fLOG() {
 	# collapsing function...sets up according to the static determinants
 	# creates all log functions
+	# _debug
+	# _info
+	# _warn
+	# _error
+	# _ask
 	# log function usage as simple as:
 	# _info "the message contents" 
 	local _log=0
@@ -125,10 +126,11 @@ _fLOG() {
 	_cInfo=$(tput setaf 2)
 	_cWarn=$(tput setaf 11)
 	_cError=$(tput setaf 1)
-	_cAsk=$(tput setaf 5; tput bold)
+	_cAsk=$(tput setaf 0; tput setab 11)
 	_cReset=$(tput sgr0)
 	# create 5 log functions based on static determinants above
-	#
+	# TODO use eval, assoc arrays and loops to build these functions with less
+	# code...someday
 	# CONSOLE AND LOG
 	if [[ $_console = 1 && $_log = 1 ]]; then
 		_debug() {
@@ -139,8 +141,22 @@ _fLOG() {
 		}
 		_info() {
 			local _timeStamp=$(date +%s.%N)
-			printf '%s %s\n' "${_cInfo}INFO${_cReset}" "${@}"
 			printf '%s %s %s\n' "$_timeStamp" "${self} ${_cInfo}INFO${_cReset}" "${@}" >>${_logFile}
+			#printf '%s %s\n' "${_cInfo}INFO${_cReset}" "${@}"
+			# hack: below prints info...multi-line messages are indented
+			SAVEIFS=$IFS
+			IFS=$'\n'
+			_pList=(${1})
+			IFS=$SAVEIFS
+			if [[ ${#_pList[@]} -gt 1 ]]; then
+				printf '%s %s\n' "${_cInfo}INFO${_cReset}" "${_pList[0]} "
+				for (( i=1; i<${#_pList[@]}; i++ ))
+				do
+					printf "\t\t: %s\n" "${_pList[$i]} "
+				done
+			else
+				printf "%s %s\n" "${_cInfo}INFO${_cReset}" "${1} "
+			fi
 		}
 		_warn() {
 			local _timeStamp=$(date +%s.%N)
@@ -155,7 +171,8 @@ _fLOG() {
 		_ask() {
 			local _timeStamp=$(date +%s.%N)
 			printf '%s %s' "${_cAsk}USER${_cReset}" "${@}"
-			printf '%s %s %s\n' "$_timeStamp" "${self} ${_cAsk}USER${_cReset}" "${@}" >>${_logFile}
+			#printf '%s %s %s\n' "$_timeStamp" "${self} ${_cAsk}USER${_cReset}" "${@}" >>${_logFile}
+			# don't log prompts...if something is important, log as debug
 		}
 	# LOG ONLY
 	elif [[ $_console = 0 && $_log = 1 ]]; then
@@ -177,8 +194,10 @@ _fLOG() {
 			printf '%s %s %s\n' "$_timeStamp" "${self} ${_cError}ERROR${_cReset}" "${@}" >>${_logFile}
 		}
 		_ask() {
-			local _timeStamp=$(date +%s.%N)
-			printf '%s %s %s\n' "$_timeStamp" "${self} ${_cAsk}USER${_cReset}" "${@}" >>${_logFile}
+			:
+			#local _timeStamp=$(date +%s.%N)
+			#printf '%s %s %s\n' "$_timeStamp" "${self} ${_cAsk}USER${_cReset}" "${@}" >>${_logFile}
+			# don't log ask prompts
 		}
 	# CONSOLE ONLY
 	elif [[ $_console = 1 && $_log = 0 ]]; then
@@ -206,7 +225,13 @@ _fLOG() {
 		_error() { : ; }
 		_ask() { : ; }
 	fi
+	export -f _debug
+	export -f _info
+	export -f _warn
+	export -f _error
+	export -f _ask
 }
+_fLOG
 
 _test() {
 	_debug "debug: debug info"
@@ -216,37 +241,36 @@ _test() {
 	_ask "ask: ask me?"
 }
 
-user=$(tput setab 6; tput setaf 7)
-_prompt() {
-	# used when user input is required
-	printf "\n%s %s" "${user}USER${reset}" "${1} "
-}
+#user=$(tput setab 6; tput setaf 7)
+#_prompt() {
+#	# used when user input is required
+#	printf "\n%s %s" "${user}USER${reset}" "${1} "
+#}
 
 info=$(tput setab 2; tput setaf 0)
-_info() {
-	# prints info...multi-line messages are indented
-	SAVEIFS=$IFS
-	IFS=$'\n'
-	_pList=(${1})
-	IFS=$SAVEIFS
-	if [[ ${#_pList[@]} -gt 1 ]]; then
-		printf "%s %s\n" "${info}INFO${reset}" "${_pList[0]} "
-		for (( i=1; i<${#_pList[@]}; i++ ))
-		do
-			printf "\t\t: %s\n" "${_pList[$i]} "
-		done
-	else
-		printf "%s %s\n" "${info}INFO${reset}" "${1} "
-	fi
-}
+#_info() {
+#	SAVEIFS=$IFS
+#	IFS=$'\n'
+#	_pList=(${1})
+#	IFS=$SAVEIFS
+#	if [[ ${#_pList[@]} -gt 1 ]]; then
+#		printf "%s %s\n" "${info}INFO${reset}" "${_pList[0]} "
+#		for (( i=1; i<${#_pList[@]}; i++ ))
+#		do
+#			printf "\t\t: %s\n" "${_pList[$i]} "
+#		done
+#	else
+#		printf "%s %s\n" "${info}INFO${reset}" "${1} "
+#	fi
+#}
 
-warn=$(tput setab 3; tput setaf 0)
-_warn() {
-	# hack to display warning...need to fix up the whole _log idea
-	#echo -e "${warn}WARN${reset} ${1} "
-	#echo "${warn}WARN${reset} ${1} "
-	printf "%s %s\n" "${warn}WARN${reset}" "${1}"
-}
+#warn=$(tput setab 3; tput setaf 0)
+#_warn() {
+#	# hack to display warning...need to fix up the whole _log idea
+#	#echo -e "${warn}WARN${reset} ${1} "
+#	#echo "${warn}WARN${reset} ${1} "
+#	printf "%s %s\n" "${warn}WARN${reset}" "${1}"
+#}
 
 # LOGGING 
 
@@ -309,7 +333,9 @@ _log() {
 	fi
 }
 
+####################################
 # HELPER FUNCTIONS
+####################################
 
 _printUsage () {
   cat << EOF
@@ -325,8 +351,7 @@ options:
 
 alternate env settings:
  -a <name>  set the germ dir name to <name>
- -w <name>  set the master studio dir to <name> (assumes $HOME/<name>)
-
+ -w <name>  set the master studio dir to <name> (assumes \$HOME/<name>)
 
 commands:
  add                 add a new germ entry to the database
@@ -335,30 +360,28 @@ commands:
  inspect             run tig on the germ git bare repo
  sizer               run github sizer tool on germ git bare repo
 
-for command specific usage, eg:
-$ germ help add
-
 EOF
 }
 
 _printInfo () {
   cat << EOF
 
-germ takes simple notes and adds them to a git repo, keeping
-minimal metadata and organizing with tree objects
+germ takes simple notes and adds them to a git bare repo,
+keeping minimal metadata and organizing with tree objects.
 
 EOF
 }
 
-
+####################################
 # PARAMETER PROCESSING FUNCTIONS
+####################################
 
 _getOpts () {
 	# check for global command flags and set VARS accordingly
 	local OPTIND
-	_log 0 "${FUNCNAME[0]}: positional parameters read: $*"
+	_debug "${FUNCNAME}: positional parameters read: $*"
 	while getopts ":hsdlva:w:" flag ; do
-		_log 0 "${FUNCNAME[0]}: OPTIND=$OPTIND flag=$flag"
+		_debug "${FUNCNAME}: OPTIND=$OPTIND flag=$flag"
 		case ${flag} in 
 			h)
 				_printInfo ; _printUsage; exit 0
@@ -366,31 +389,32 @@ _getOpts () {
 			a)
 				_germDirName=$OPTARG
 				# TODO find a better way of avoiding using key words as OPTARGs
-				[[ $OPTARG =~ add|edit|create|print ]] && _log 4 "$OPTARG not allowed"
+				[[ $OPTARG =~ add|edit|create|print ]] && { _error "'$OPTARG' not allowed as name for -$flag"; exit 1; }
 				_warn "using alternative germ name '$_germDirName'"
 				;;
 			w)
 				_studioDirName=$OPTARG
-				[[ $OPTARG =~ add|edit|create|print ]] && _log 4 "$OPTARG not allowed"
+				[[ $OPTARG =~ add|edit|create|print ]] && { _error "'$OPTARG' not allowed as name for -$flag"; exit 1; }
 				_warn "using alternative studio name '$_studioDirName'"
 				;;
  	    s)
-				_log 0 "${FUNCNAME[0]}: enabling silent mode"
+				_warn "${FUNCNAME}: enabling silent mode with flag -$flag"
  	      _SILENT=true
 				;;
 			d)
 				_DEBUG=true
-				_log 0 "${FUNCNAME[0]}: enabled debug mode"
+				_warn "${FUNCNAME}: enabled debug mode with flag -$flag"
 				;;
 			l)
 				_LOG=true
-				_log 0 "${FUNCNAME[0]}: enabled log mode"
+				_warn "${FUNCNAME}: enabled log mode with flag -$flag"
 				;;
 			v)
-				echo "${green}verion${reset}: beta"; exit 0
+				_info "${green}verion${reset}: beta"; exit 0
 				;;
 			?)
-				echo "${red}ERROR${reset}: invalid global option: -$OPTARG"; exit 1
+				#echo "${red}ERROR${reset}: invalid global option: -$OPTARG"; exit 1
+				_error "invalid global option: -$OPTARG"; exit 1
 				;;
 		esac
 	done
@@ -398,40 +422,40 @@ _getOpts () {
 	# export a paired down parameter string flags and args read within this
 	# function will be discarded, leaving behind only that which the rest needs
 	export _workingParams=$*
-	_log 0 "${FUNCNAME[0]}: _LOG=${_LOG}"
-	_log 0 "${FUNCNAME[0]}: _SILENT=${_SILENT}"
-	_log 0 "${FUNCNAME[0]}: _DEBUG=${_DEBUG}"
+	_debug "${FUNCNAME}: _LOG=${_LOG}"
+	_debug "${FUNCNAME}: _SILENT=${_SILENT}"
+	_debug "${FUNCNAME}: _DEBUG=${_DEBUG}"
 	return
 }
 
 _getSubcommand() {
 	# look for the first subcommand and set _subCommand accordingly
 	while ((${#})); do
-		_log 0 "${FUNCNAME[0]}: reading parameter '${1}'"
+		_debug "${FUNCNAME}: reading parameter '${1}'"
 		case $1 in
 			help)
 				_printInfo ; _printUsage; exit 0
 				;;
 			add)
-				_log 0 "${FUNCNAME[0]}: '$1' called, checking for $1 flags now"
+				_debug "${FUNCNAME}: '$1' called, checking for $1 flags now"
 				_subCommand=$1
 				_getAddOpts
 				return
 				;;
 			edit)
-				_log 0 "_getSubcommand(): '$1' called, checking for $1 flags"
+				_debug "${FUNCNAME}: '$1' called, checking for $1 flags"
 				_subCommand=$1
 				_getEditOpts
 				return
 				;;
 			create)
-				_log 0 "_getSubcommand(): '$1' called, checking for $1 flags"
+				_debug "${FUNCNAME}: '$1' called, checking for $1 flags"
 				_subCommand=$1
 				_getCreateOptions
 				return
 				;;
 			list)
-				_log 0 "_getSubcommand: $1"
+				_debug "${FUNCNAME}: '$1' called"
 				_subCommand=$1
 				return
 				;;
@@ -440,32 +464,27 @@ _getSubcommand() {
 				return
 				;;
 			status)
-				#_log 0 "_getSubcommand: $1"
 				_subCommand=$1
 				return
 				;;
 			recover)
-				#_log 0 "_getSubcommand: $1"
 				_subCommand=$1
 				return
 				;;
 			sizer)
-				#_log 0 "_getSubcommand: $1"
 				_subCommand=$1
 				return
 				;;
 			source)
-				#_log 0 "_getSubcommand: $1"
 				_subCommand=$1
 				return
 				;;
 			test)
-				#_log 0 "_getSubcommand: $1"
 				_subCommand=$1
 				return
 				;;
 			*)
-				#_log 3 "${FUNCNAME}: '${1}' is not a subcommand"
+				_error "${FUNCNAME}: '${1}' is not a subcommand"
 				return 1
 				;;
 		esac
@@ -483,21 +502,21 @@ _setEnv() {
 	_gitWT="git --git-dir=${_germGitDisk} --work-tree=${_germDir}"
 	_git="git --git-dir=${_germGitDisk}"
 	[[ -f "${_logFile}" ]] && _canLog=true || _canLog=false
-	_log 0 "self=$self"
-	_log 0 "_studioDirName=$_studioDirName"
-	_log 0 "_studioDir=$_studioDir"
-	_log 0 "_germDirName=$_germDirName"
-	_log 0 "_germDir=$_germDir"
-	_log 0 "_germGitDisk=$_germGitDisk"
-	_log 0 "_logFile=$_logFile"
-	_log 0 "_gitWT=$_gitWT"
-	_log 0 "_git=$_git"
-	_log 0 "git version= $($_git -v)"
-	_log 0 "_canLog=${_canLog:-false}"
-	_log 0 "_user=${_user:-unset}"
-	_log 0 "_DEBUG=$_DEBUG"
-	_log 0 "_SILENT=$_SILENT"
-	_log 0 "_LOG=$_LOG"
+	_debug "self=$self"
+	_debug "_studioDirName=$_studioDirName"
+	_debug "_studioDir=$_studioDir"
+	_debug "_germDirName=$_germDirName"
+	_debug "_germDir=$_germDir"
+	_debug "_germGitDisk=$_germGitDisk"
+	_debug "_logFile=$_logFile"
+	_debug "_gitWT=$_gitWT"
+	_debug "_git=$_git"
+	_debug "git version= $($_git -v)"
+	_debug "_canLog=${_canLog:-false}"
+	_debug "_user=${_user:-unset}"
+	_debug "_DEBUG=$_DEBUG"
+	_debug "_SILENT=$_SILENT"
+	_debug "_LOG=$_LOG"
 }
 
 _isEnvSufficient() {
@@ -506,44 +525,44 @@ _isEnvSufficient() {
 	local _sufficient=true
 	for _required in "${_requiredCommands[@]}"; do
 		if ! hash "${_required}" 2>/dev/null; then
-			_log 3 "${FUNCNAME[0]}: ${_required} not found"
+			_debug "${FUNCNAME}: ${_required} not found"
 			_sufficient=false
 		else
-			_log 0 "${FUNCNAME}: ${_required} found"
+			_warn "${FUNCNAME}: ${_required} found"
 		fi
 	done
-	# check for germ dir (unless we are running create...this could use some
-	# cleaning for clarification)
-	# if there is no germ dir and this
+	# check for germ dir (unless we are running create)
 	if [ ! -d "${_germDir}" ]; then
 		if [ -z "${_subCommand:-}" ]; then
-			_log 3 "found no ${_germDir}; run 'germ create' first"
+			_error "found no ${_germDir}; run 'germ create' first"
 		 	return 1
 		elif [ ! ${_subCommand:=} = "create" ]; then
-			_log 3 "found no ${_germDir}; run 'germ create' first"
+			_error "found no ${_germDir}; run 'germ create' first"
 			_sufficient=false
 		fi
 	fi
 	[ ${_sufficient} = true ] && return 0 || return 1
 }
 
-# SUBCOMMAND FUNCTIONS AND SUBFUNCTIONS
+#################################
+# SUBCOMMAND OPTION PROCESSING
+#################################
 
 _getAddOpts() {
-	# check for backup flags and args
+	# check for _add() flags and args
 	local OPTIND=1
 	set -- ${_workingParams}
-	#_log 0 "${FUNCNAME[0]}: positional parameters read: $*"
+	_debug "${FUNCNAME}: positional parameters read: $*"
 	shift
 	while getopts ":i" flag "$@"; do
 		case ${flag} in
 			i)
 				# inline add (no editor invoked)
-				_log 0 "enabled inline mode"
+				_warn "enabled inline mode"
 				_inline=true
 				;;
 			?)
-				 _warn "${FUNCNAME[0]}: unknown flag -$OPTARG"; exit 1
+				 _error "${FUNCNAME}: unknown flag -$OPTARG"; exit 1
 				;;
 		esac
 	done
@@ -554,16 +573,16 @@ _getAddOpts() {
 _getEditOptions() {
 	local OPTIND=1
 	set -- ${_workingParams}
-	#_log 0 "${FUNCNAME[0]}: positional parameters read: $*"
+	_debug "${FUNCNAME}: positional parameters read: $*"
 	shift
 	while getopts ":f" flag "$@"; do
 		case ${flag} in
 			f)
 				_forceFormat=true
-				_log 1 "${FUNCNAME[0]}: force mode enabled"
+				_warn "${FUNCNAME}: force mode enabled"
 				;;
 			?)
-				_warn "${FUNCNAME[0]}: unknown flag -$OPTARG"; exit 1
+				_error "${FUNCNAME}: unknown flag -$OPTARG"; exit 1
 				;;
 		esac
 	done
@@ -574,16 +593,16 @@ _getEditOptions() {
 _getCreateOptions() {
 	local OPTIND=1
 	set -- ${_workingParams}
-	#_log 0 "${FUNCNAME[0]}: positional parameters read: $*"
+	_debug "${FUNCNAME}: positional parameters read: $*"
 	shift
 	while getopts ":f" flag "$@"; do
 		case ${flag} in
 			f)
 				_forceFormat=true
-				_log 1 "${FUNCNAME[0]}: force mode enabled"
+				_warn "${FUNCNAME}: force mode enabled"
 				;;
 			?)
-				_log 3 "${FUNCNAME[0]}: unknown flag -$OPTARG"; exit 1
+				_error "${FUNCNAME}: unknown flag -$OPTARG"; exit 1
 				exit 1
 				;;
 		esac
@@ -591,9 +610,10 @@ _getCreateOptions() {
 	shift $((OPTIND - 1))
 	export _workingParams=$*
 }
-	
-# SUB COMMANDS
 
+#####################################	
+# SUBCOMMANDS
+#####################################	
 
 _showStatus() {
 	# arg 1 = level [optional]
@@ -855,22 +875,16 @@ _create() {
 	local _gitUserEmail=$(git config --global --get user.email)
 	local _gitDisk=${_germGitDisk}
   trap _irishExit SIGINT
-	_prompt "enter studio name ["${_studioDirName}"] "
+	_ask "enter studio name ["${_studioDirName}"] "
 	read _studioName
 	[ -z "${_studioName}" ] || _studioDirName="${_studioName}"
-	#_prompt "enter studio path ["${_studioDir}"] "
-	#read _studioPath
-	#[ -z ${_studioPath} ] || _studioDir="${_studioPath}"
-	_prompt "enter germ name ["${_germDirName}"] "
+	_ask "enter germ name ["${_germDirName}"] "
 	read _germName
 	[ -z ${_germName} ] || _germDirName="${_germName}"
-	#_prompt "enter germ gitdisk name ["${_germGitDisk}"] "
-	#read _germGit
-	#[ -z ${_germGit} ] || _germGitDisk="${_germGit}"
-	_prompt "enter preferred username [${_gitUserName}] "	
+	_ask "enter preferred username [${_gitUserName}] "	
 	read _userName
 	[ -z ${_userName} ] && _userName="${_gitUserName}"
-	_prompt "enter preferred email [${_gitUserEmail}] "	
+	_ask "enter preferred email [${_gitUserEmail}] "	
 	read _userEmail
 	[ -z ${_userEmail} ] && _userEmail="${_gitUserEmail}"
 	_setEnv
@@ -880,22 +894,27 @@ _create() {
 	_info "germ gitdisk: ${_germGitDisk}"
 	_info "germ user name: ${_userName}"
 	_info "germ user email: ${_userEmail}"
-	read -rsn1 -p "proceed? (y/n)" _yn
-	[[ "$_yn" = "n" ]] && { _warn "aborting" ; exit ; }
+	read -rsn1 -p "$(_ask 'proceed? (y/n)')" _yn
+	echo
+	[[ "$_yn" != "y" ]] && { _error "aborting"; exit 1; }
 	[ ! -d "${_germDir}" ] && mkdir -p "${_germDir}"
 	if [ ${_DEBUG} = "true" ]; then
-		gitdisk -d create -b ${_germGitDisk}
+		gitdisk -d create -b ${_germGitDisk} || { _error "could not create"; exit 1; }
 	else
-		gitdisk create -b ${_germGitDisk}
+		gitdisk create -b ${_germGitDisk} || { _error "could not create"; exit 1; }
 	fi
-  git config --global includeif.gitdir:"${_studioDir}".path "${_studioDir}/.gitconfig-studio"
-  git config --global includeif.gitdir:"${_germGitDisk}".path "${_studioDir}/.gitconfig-studio"
-	git config --file="${_studioDir}"/.gitconfig-studio user.name "${_userName}"
-	git config --file="${_studioDir}"/.gitconfig-studio user.email "${_userEmail}"
+	touch ${_logFile}
+  #git config --global includeif.gitdir:"${_studioDir}".path "${_studioDir}/.gitconfig-studio"
+  #git config --global includeif.gitdir:"${_germGitDisk}".path "${_studioDir}/.gitconfig-studio"
+	#git config --file="${_studioDir}"/.gitconfig-studio user.name "${_userName}"
+	#git config --file="${_studioDir}"/.gitconfig-studio user.email "${_userEmail}"
+  git config --global includeif.gitdir:"${_germDir}".path "${_germDir}/.gitconfig"
+	git config --file="${_germDir}"/.gitconfig user.name "${_userName}"
+	git config --file="${_germDir}"/.gitconfig user.email "${_userEmail}"
 	# _user is global var and short
 	# _userUUID is blobid and long
-	_userUUID=$(_uuidGet)
-	export _user=${_userUUID:0:4}
+	_userUUID=$(_uuidGen "${_userName}:${_userEmail}")
+	_user=$(_userAdd "${_userName}:${_userEmail}")
 	# map u/uuid/self to blob of git user string "user:email"
 	# set /u/uuid/current as empty
 	_mapBlob "${_userUUID}" "u/${_user}/self"
@@ -1045,6 +1064,8 @@ _userSet() {
 	local _uuid
 	# if no arg supplied
 	if [ -z "${1:-}" ]; then
+		# exit if create is running
+		[[ ${_subCommand:-} = "create" ]] && return
 		# and if global _user is unset
 		if [ -z "${_user:-}" ]; then
 			# try to get the user from u/*/current
@@ -1483,7 +1504,7 @@ _getSourceList() {
 
 _printSourceEntities() {
 	# arg 1 = source
-	if _doesKeyExist c/${1}/self.catalog; then
+	if _doesKeyExist c/${1:-}/self.catalog; then
 		_readKey c/${1}/self.catalog
 	else
 		return 1
@@ -1563,7 +1584,8 @@ _source () {
 		_newSourceName=$(_getSourceList | fzf ${_fzfBack:-} ${_fzfEsc} ${_fzfPrompt} "${_fzfColor}" "${_fzfHeader}" "${_fzfPreview}")
 		echo ${_newSourceName}
 	}
-	while read -r -s -n 1 -p"$(_prompt 'enter selection [? for help]')" _mainSelection; do
+	while read -r -s -n 1 -p"$(_ask 'enter selection [? for help]') " _mainSelection; do
+		echo	# curious problem here...using the _ask log function may not be the right decision
 		case $_mainSelection in
  			c)
 				_setSource $(_chooseSource) || _warn "aborted source change"
@@ -1640,7 +1662,8 @@ _source () {
 				# source name
 		local _oldName="${1}"
 		local _newName
-		_interactiveSourcePicker _newName
+		_interactiveSourcePicker _newName "${1}"
+		[[ -z ${_newName:-} ]] && return
 		_id=$(_writeBlob "${_newName}")
 		_mapBlob "${_id}" "c/${_newName}/self"
 		for i in $(_getKeyList "c/${_oldName}/self.*"); do
@@ -1655,7 +1678,10 @@ _source () {
 		# smaller function...one job...pick a new source name
 		# need to modify for better variable passing
 		# arg 1 = caller's variable name
-		local __name=$1
+		# arg 2 = default value [optional]
+		# ie we tell the function what variable to set
+		local __name="${1}"
+		local __default="${2:-}"
 		_validateName(){
 			# function used within fzf preview window to assist in the selection of a
 			# source name
@@ -1725,29 +1751,32 @@ _source () {
 		local _fzfPreview="--preview=_validateName {q} {} --preview-window=50%"
 		local _fzfBack="--bind=backward-eof:change-prompt(ENTER-NEW-NAME>)"
 		local _fzfEsc="--bind=esc:clear-query"
+		# seed with 'sample' if this is the first
 		_doesKeyExist c/* || local _fzfSeed="--query=sample"
+		# seed with a name if it was provided as $2
+		[[ ${__default} ]] && local _fzfSeed="--query=$__default"	
 		# this fzf command allows us to use as a "reverse" or false finder...ie we
 		# use the fzf results to show a list from which we cannot choose one of the
 		# already existing members of the list
 		while true; do
 			_newSourceName=$(_getSourceList | ${_fzfFalse} ${_fzfBack} ${_fzfEsc} ${_fzfPrompt} ${_fzfSeed:-} "${_fzfColor}" "${_fzfHeader}" "${_fzfPreview}")
 			if _isSourceNameValid "${_newSourceName}"; then
-				_prompt "'${_newSourceName}' is valid, create? (y/n/q) "
-				read -r -s -n 1 _ynq
+				read -r -s -n 1 -p "$(_ask "'${_newSourceName}' is valid, create? (y/n/q) ")" _ynq
+				echo
 				[[ "${_ynq:-}" = "y" ]] && break
 				[[ "${_ynq:-}" = "q" ]] && return
 				[[ "${_ynq:-}" = "n" ]] && continue
 			else
 				_warn "'${_newSourceName}' is not a valid name"
-				_prompt "try again? (y/n) "
+				_ask "try again? (y/n) "
 				read -r -s -n1  _yn
+				echo
 				[[ "${_yn:-}" = "y" ]] && continue
 				[[ "${_yn:-}" = "n" ]] && return
 			fi
 		done
 		eval ${__name}=${_newSourceName}
 	}
-
 
 	_interactiveSourceAdd() {
 		_validateName(){
@@ -1825,20 +1854,20 @@ _source () {
 		while true; do
 			_newSourceName=$(_getSourceList | ${_fzfFalse} ${_fzfBack} ${_fzfEsc} ${_fzfPrompt} ${_fzfSeed:-} "${_fzfColor}" "${_fzfHeader}" "${_fzfPreview}")
 			if _isSourceNameValid "${_newSourceName}"; then
-				_prompt "'${_newSourceName}' is valid, create? (y/n/q) "
+				_ask "'${_newSourceName}' is valid, create? (y/n/q) "
 				read -r -s -n 1 _ynq
 				[[ "${_ynq:-}" = "y" ]] && break
 				[[ "${_ynq:-}" = "q" ]] && return
 				[[ "${_ynq:-}" = "n" ]] && continue
 			else
 				_warn "'${_newSourceName}' is not a valid name"
-				_prompt "try again? (y/n) "
+				_ask "try again? (y/n) "
 				read -r -s -n1  _yn
 				[[ "${_yn:-}" = "y" ]] && continue
 				[[ "${_yn:-}" = "n" ]] && return
 			fi
 		done
-		_prompt "enter a description for '${_newSourceName}': "
+		_ask "enter a description for '${_newSourceName}': "
 		while read -r -e  _newSourceDescription; do
 			case "${_newSourceDescription}" in
 				help|h|\?)
@@ -1860,7 +1889,9 @@ _source () {
 					;;
 			esac
 		done
-		while read -r -e -n1 -p "${user}USER${reset} save '${_newSourceName}' as a new source? (y/n) " _c; do
+		#while read -r -e -n1 -p "${user}USER${reset} save '${_newSourceName}' as a new source? (y/n) " _c; do
+		while read -r -e -n1 -p "$(_ask "save '${_newSourceName}' as a new source? (y/n)") " _c; do
+			echo
 			case ${_c} in
 				y)
 					_saveSource "${_newSourceName}" "${_newSourceDescription}"
@@ -1874,7 +1905,9 @@ _source () {
 					;;
 			esac
 		done
-		while read -r -e -n1 -p "${user}USER${reset} set ${_newSourceName} as current? (y/n) " _d; do
+		#while read -r -e -n1 -p "${user}USER${reset} set ${_newSourceName} as current? (y/n) " _d; do
+		while read -r -e -n1 -p "$(_ask "set '${_newSourceName}' as current? (y/n) ") " _d; do
+			echo
 			case ${_d} in
 				y)
 					_setSource "${_newSourceName}"
@@ -1947,7 +1980,7 @@ _shell() {
 	}
 	# confirm exit function
 	_confirmExit() {
-		_prompt "quit germ? press ${label}y${reset} to quit"
+		_ask "quit germ? press ${label}y${reset} to quit"
 		while read -r -s -n 1  __confirm; do
 			echo
 			case ${__confirm} in
@@ -1981,6 +2014,7 @@ HEREDOC
   add        add a new germ entry
   list       list the tag catalog
   status     show germ health
+  inspect    run tig to inspect repo
   source     add and manipulate source
   stop       exit studio
   help       print this message
@@ -1991,15 +2025,23 @@ EOF
 	_mainPrompt() {
 	_setPrompt
 	# ignore ctrl+\ ctrl+z and ctrl+c
-	trap '' SIGQUIT SIGTSTP SIGINT
+	trap '' SIGQUIT SIGTSTP SIGINT SIGTERM
 	# catch ctrl-d and run _confirmExit
-	#trap _confirmExit EXIT
-	# THIS IS NOT WORKING RIGHT
+	trap _confirmExit EXIT
+	_p() {
+		_isIndexClean || _dirty="${boldred}X${reset}"
+		_cs=$(_getSource)
+		echo -n "${prompt}${_studioDirName}${reset}:${label}${_germDirName}${reset} ${green}${_user}${reset} [${_cs}] ${_dirty:-} > "
+		# NEED to use escape codes if i want to use readline also
+	}
 
 	local __input
+	while IFS='' read -r -d $'\n' -p "$(_p)" -e __input; do
+	#while IFS='' read -r -d $'\n' -p "${_prompt}" -e __input; do
 	#while IFS='' read -r -d $'\n' -p "${_prompt}" __input; do
-	while IFS='' read -r -e -d $'\n' -p "${_prompt}" __input; do
-	#while read -p -e -p "${_prompt}" __input; do
+	# for some reason, using -e for readline causes a rogue newline
+	# read -p does not allow the use of \[ and \] to escape colors etc
+	#while IFS='' read -r -e -d $'\n' -p "${_prompt}" __input; do
 		history -s "${__input}"
 		if [[ -z "${__input}" ]]; then
 			true
@@ -2048,14 +2090,14 @@ _irishExit() {
 main() {
 	# what are we trying to do (read all the positional parameters and set VARS)
 	_getOpts "${@}"
-	_log 0 "${FUNCNAME[0]}: parameters read: ${@}"
-	_log 0 "${FUNCNAME[0]}: paired-down parameters: $_workingParams"
+	_debug "${FUNCNAME}: parameters read: ${*}"
+	_debug "${FUNCNAME}: paired-down parameters: $_workingParams"
 	_getSubcommand $_workingParams
-	_log 0 "${FUNCNAME[0]}: _subCommand: ${_subCommand:-}"
-	_log 0 "${FUNCNAME[0]}: remaining args: $_workingParams"
+	_debug "${FUNCNAME}: _subCommand: ${_subCommand:-}"
+	_debug "${FUNCNAME}: remaining args: $_workingParams"
 	# setup the environment after processing all command line parameters
 	_setEnv
-	# set up logging functions
+	# reinitialize log functions after processing all command line options
 	_fLOG
 	# validate the environment
 	_isEnvSufficient || _log 4 "cannot run until these problems are resolved"
