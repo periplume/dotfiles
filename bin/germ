@@ -41,15 +41,6 @@ self=$(basename $0)
 
 # BEHAVIOR
 
-# TODO figure out a better means of knowing
-# 1. is this an interactive shell session
-# 2. is this part of a pipe
-# 3. are we in our custom interactive shell (and does that matter?)
-# set up logging and stdout stderr etc with traps
-# possibly check for tty?
-#[[ -t 1 ]] && echo 'STDOUT is attached to TTY'
-#[[ -p /dev/stdout ]] && echo 'STDOUT is attached to a pipe'
-#[[ ! -t 1 && ! -p /dev/stdout ]] && echo 'STDOUT is attached to a redirection'
 
 # debugging and logging settings
 # script debug toggle (set to true to enable default global debugging)
@@ -442,6 +433,8 @@ _setEnv() {
 	_debug "_LOG=$_LOG"
 	_debug "git command: 'git ${_git}'"
 	_debug "gitWT command: 'git ${_gitWT}'"
+	# TODO locking properly
+	#[[ ! -f "${_germDir}/session.lock" ]] || { _error "LOCKED"; exit 1; }
 }
 
 _isEnvSufficient() {
@@ -655,6 +648,8 @@ _listTags() {
 # ADD
 ##################################
 
+# TODO add -b and -i need some thinking.
+
 _add() {
 	local _germString=
 	local _commitMsgString=
@@ -667,6 +662,13 @@ _add() {
 	fi
 	# FIX THIS...-i should not require -b
 	# -b just means read from stdin...and it can be one or many lines
+	# QUESTION...is it possible to detect a bulk mode input...so that when bulk is
+	# detected, we add blobs and only commit when the detected bulk input is done.
+	# the problem is that when i am doing a bulk entry now...i call the script for
+	# each entry:
+	# time for i in {1..1000}; do ./gen_random_germ | germ -a periplume -w studiodev add -b -i ; done
+	# so this would be very difficult
+
 	if [ ${_inline:-null} = "true" ]; then
 		if [ -p /dev/stdin ]; then
 			_debug "reading from stdin"
@@ -684,9 +686,10 @@ _add() {
 		#_workingParams="${_message}"
 		_germString="${_message}"
 	fi
-	_commitMsgString=$(_buildCommitMsg "${_germString}") || _error "empty commit msg"
+	_commitMsgString=$(_buildCommitMsg "${_germString}") || _commitMsgString="empty commit msg"
+	#_commitMsgString=$(_buildCommitMsg "${_germString}") || _error "empty commit msg"
 	# set up primary key namespace mapping
-	_primaryKey=$(_getNewKey) || _error "could not get a new unique key"
+	#_primaryKey=$(_getNewKey) || _error "could not get a new unique key"
 	# ADD the BLOB...get the BLOB id
 	_blobID=$(git ${_git} hash-object --stdin -w <<< "${_germString}")
 	#
@@ -695,10 +698,14 @@ _add() {
 	#
 	# map blob to primary key in a/
 	_mapBlob ${_blobID} ${_primaryKey}
+	# map blob to the source namespace
+	_mapBlob ${_blobID} c/${_currentSource}/cat/${_blobID}
 	# add blob to the source list in $_currentSource
-	_addToSource ${_currentSource} ${_primaryKey}
+	#_addToSource ${_currentSource} ${_primaryKey}
+	#_addToSource ${_currentSource} ${_blobID}
 	# map tags
-	_mapTags $_blobID
+	# something broken here now
+	#_mapTags $_blobID
 	# don't commit on each add during a bulk entry
 	# some other logic is needed here to confirm the bulk add is over
 	if [[ ${_bulk:-} = "true" ]]; then
@@ -911,6 +918,9 @@ _create() {
 # _userAdd
 # _doesUserExist
 # _uuidGen
+#
+# TODO add index.lock detection function which loops, waiting for the lock to
+# disappear...
 
 _getNewKey() {
 	# generate a new unique unix_time key path using date +%s and global _user
@@ -1240,7 +1250,8 @@ _doesKeyExist() {
 }
 
 _isIndexClean() {
-	git ${_git} diff-index --quiet --cached HEAD 2>&1 >/dev/null || return 1
+	git ${_git} diff-index --quiet --cached main 2>&1 >/dev/null || return 1
+	#git ${_git} diff-index --quiet --cached HEAD 2>&1 >/dev/null || return 1
 # TODO
 # improve this
 # 1. report on a/ for blob changes
@@ -1300,10 +1311,6 @@ _getSource() {
 	echo ${x}
 	# this prints empty string if no source...printing null is not a good idea,
 	# instead, change behavior above
-}
-
-_test() {
-	_getSource
 }
 
 _isSourceSet() {
@@ -1424,6 +1431,10 @@ _getSourceList() {
 
 _printSourceEntities() {
 	# arg 1 = source
+	git ${_git} ls-files --format='%(objectname)' c/${1}/cat
+}
+__printSourceEntities() {
+	# arg 1 = source
 	if _doesKeyExist c/${1:-}/self.catalog; then
 		_readKey c/${1}/self.catalog
 	else
@@ -1457,7 +1468,7 @@ export -f _getSourceCount
 # and print
 #
 # TODO add a list of disallowed names eg ("unset") which we use internally
-_source () {
+_source() {
 	local _currentSource=""
 	export _maxLength=25
 	export _minLength=1
@@ -1613,8 +1624,8 @@ _source () {
 	##########################
 	_addSource() {
 		local _newSourceName
-		_interactiveSourcePicker _newSourceName
-		# BUG...named a source 'a' and it passed
+		_interactiveSourcePicker _newSourceName 
+		#_interactiveSourcePicker _newSourceName || { _warn "something wrong"; return; }
 		_isSourceNameValid "${_newSourceName}" || { _error "invalid"; return; } 
 		[[ -z ${_newSourceName:-} ]] && return
 		[[ ${_newSourceName} = ${_currentSource} ]] && return
@@ -1679,13 +1690,18 @@ _source () {
 		[[ -z ${_newName:-} ]] && return
 		_id=$(_writeBlob "${_newName}")
 		_mapBlob "${_id}" "c/${_newName}/self"
+		# attributes
 		for i in $(_getKeyList "c/${_oldName}/self.*"); do
 			_blobID=$(_getBlobID "c/${1}/${i}")
 			_mapBlob "${_blobID}" "c/${_newName}/${i}"
-			_deleteKey "c/${_oldName}/${i}"
+		done
+		# catalog
+		for c in $(_printSourceEntities "${_oldName}"); do
+			_mapBlob "${c}" "c/${_newName}/cat/${c}"
 		done
 		_setSource "${_newName}"
-		_deleteKey "c/${_oldName}/self"
+		_deleteKey "c/${_oldName}/*"
+	# this can be done more efficiently with a 'git update-index --index-info'
 	}
 
 	_interactiveSourcePicker() {
@@ -1757,7 +1773,7 @@ _source () {
 			echo "------SELECTED SOURCE DESCRIPTION------------"
 			_readKey c/${2}/self.description
 		}
-		# export function to fzf for --preview
+		# export above function to fzf for --preview
 		export -f _validateName
 		local _fzfFalse="fzf --bind=enter:print-query --print-query --exact "
 		local _fzfPrompt="--prompt=TYPE-NEW-NAME> --info=hidden"
@@ -1774,7 +1790,8 @@ _source () {
 		# use the fzf results to show a list from which we cannot choose one of the
 		# already existing members of the list
 		while true; do
-			_newSourceName=$(_getSourceList | ${_fzfFalse} ${_fzfBack} ${_fzfEsc} ${_fzfPrompt} ${_fzfSeed:-} "${_fzfColor}" "${_fzfHeader}" "${_fzfPreview}")
+			_newSourceName=$(_getSourceList | ${_fzfFalse} ${_fzfBack} ${_fzfEsc} ${_fzfPrompt} ${_fzfSeed:-} "${_fzfColor}" "${_fzfHeader}" "${_fzfPreview}") || { _warn "can't do that"; return; }
+			#_newSourceName=$(_getSourceList | ${_fzfFalse} ${_fzfBack} ${_fzfEsc} ${_fzfPrompt} ${_fzfSeed:-} "${_fzfColor}" "${_fzfHeader}" "${_fzfPreview}")
 			if _isSourceNameValid "${_newSourceName}"; then
 				read -r -s -n 1 -p "$(_ask "'${_newSourceName}' is valid, create? (y/n/q) ")" _ynq
 				echo
@@ -1795,7 +1812,6 @@ _source () {
 
 	_isSourceNameValid() {
 		# arg 1 = source name
-		#if [[ "${1}" =~ ^([[:lower:]|[:upper:]|[:digit:]]|[-_.]){3,${_maxLength}}$ ]]; then
 		if [[ "${1}" =~ ^([[:lower:]|[:upper:]|[:digit:]]|[-_.]){${_minLength},${_maxLength}}$ ]]; then
 			[[ "${1}" =~ ^[[:lower:]|[:digit:]] ]] || return 1
 			[[ "${1}" =~ [[:lower:]|[:digit:]]$ ]] || return 1
@@ -1816,7 +1832,8 @@ _source () {
 	_mainMenu
 }
 
-_test() {
+
+tmux_test() {
 	set -x
 	local session
 	export IGNOREEOF=10
@@ -1828,6 +1845,32 @@ _test() {
 	tmux attach-session -t "${session}"
 }
 
+_browse() {
+	# arg 1 = source
+	local _entityList
+	_entityList=($(_printSourceEntities ${1}))
+	_debug "_browse '${1}' which has '${#_entityList[@]}' entities"
+	x=0
+	echo "==== entity $x ======="
+	_entity=$(_readKey ${_entityList[$x]}) || { _warn "nothing to see"; return; }
+	_printSourceEntities ${1}  | fzf --preview-window=85% --exact --preview '_printBlob {}'
+	#_printSourceEntities ${1}  | fzf --preview-window=85% --exact --preview '_readKey {}'
+	#echo "${_entity}" | less -Ps
+	#for i in ${_entityList[@]}; do
+	#	_debug "$i"
+	#	_entity=($(_readKey $i))
+	#	echo ===$i===
+	#	echo "$_entity" | less -Ps
+	#done
+}
+
+_lock() {
+	touch ${_germDir}/session.lock
+}
+
+_unlock() {
+	rm ${_germDir}/session.lock
+}
 
 ###############
 ###### SHELL
@@ -1852,26 +1895,44 @@ _shell() {
 	local _p
 	local _dirty
 	local _session="${_user}.$(date +%s)"
-	git ${_gitWT} switch -c ${_session}
-	# track down how ctrl-d continues to function
-	
+	# set a session lock to prevent changes from any other process?
+	#_lock
+	# branching idea...not quite right
+	#git ${_gitWT} switch -c ${_session}
 	# confirm exit function
 	_confirmExit() {
-		_ask "quit germ? press ${label}y${reset} to quit"
+		if _isIndexClean; then
+			_debug "index is clean"
+		else
+			_debug "index is dirty"
+		fi
+		_ask "save session? press ${label}y${reset} to commit changes, ${label}n${reset} to discard changes"
+		#_ask "quit germ? press ${label}y${reset} to quit"
 		while read -r -s -n 1  __confirm; do
 			echo
 			case ${__confirm} in
 				y)
-					_debug 'git ${_gitWT} switch main'
-					git ${_gitWT} switch main
-					_debug 'git ${_gitWT} merge ${_session}'
-					git ${_gitWT} merge ${_session}
-					_debug 'git ${_gitWT} branch -d ${_session}'
-					git ${_gitWT} branch -d ${_session}
-					_isIndexClean || _doCommit "[${self}] $(date) closed session"
+					set -x
+					_isIndexClean || _doCommit "[${self}] $(date) closed session: ${_session}"
+					#git ${_gitWT} rebase main
+					#git ${_gitWT} switch -f main
+					#_debug 'git ${_gitWT} merge ${_session}'
+					#git ${_gitWT} merge ${_session}
+					#_debug 'git ${_gitWT} branch -d ${_session}'
+					#git ${_gitWT} branch -d ${_session}
+					#_unlock
 					trap - EXIT
 					trap - SIGINT
 					cd $OLDPWD
+					exit 0
+					;;
+				n)
+					set -x
+					#_debug "git switch main"
+					#git ${_gitWT} switch -f main
+					#_debug "git branch -D ${_session}"
+					#git ${_gitWT} branch -D ${_session}
+					#_unlock
 					exit 0
 					;;
 				*)
@@ -1899,9 +1960,10 @@ HEREDOC
 
   add        add a new germ entry
   list       list the tag catalog
+  browse     read through the current source entities
   status     show germ health
   inspect    run tig to inspect repo
-  source     add and manipulate source
+  s) source     add and manipulate source
   stop       exit studio
   help       print this message
 
@@ -1913,7 +1975,7 @@ EOF
 	# ignore ctrl+\ ctrl+z and ctrl+c
 	trap '' SIGQUIT SIGTSTP SIGINT SIGTERM
 	# catch ctrl-d and run _confirmExit
-	trap _confirmExit EXIT
+	#trap _confirmExit EXIT
 	_p() {
 		# sets the prompt
 		# colors cannot derive from tput here...as 'read -e' becomes confused
@@ -1929,13 +1991,30 @@ EOF
 		_isIndexClean || _dirty="${red}-${reset}"
 		_cs=$(_getSource)
 		echo -n "${_cH}${_studioDirName}${reset}:${_cG}${_germDirName}${reset} ${_cU}${_user}${reset} [${_cS}${_cs}${reset}] ${_dirty} > "
+	#
+	# create a mechanism to display whether there is a lock on the index file
 	}
 	local __input
-	while IFS='' read -r -d $'\n' -p "$(_p)" -e __input; do
-	#while read -r -d $'\n' -p "$(_p)" -e __input; do
+	# here...a blank line returns an empty string...BUT...if EOF is encountered
+	# then read exits because NULL is returned
+	# two things
+	# read here as above in _source...one char...and test for the things
+	# also, trap OUTSIDE of _shell, not inside...this is why read returns (i
+	# think a non-zero) which ends the while loop, or is it that read reads a char
+	# but the -z test doesn't catch it...thus the while loop passes
+	# The readline() function as called by bash will install its own signal handlers upon waiting for input from the user, and restore the original handlers upon returning; a SIGHUP while waiting for input from the user will cause it to return NULL, which will be treated as EOF by bash (in the yy_readline_get() function), before having the chance to run the deferred trap handler. 
+	# the "|| true" catches readline (read -e) from returning with NULL string,
+	# which exits the loop itself...which we do not want to do. 
+	while IFS='' read -r -d $'\n' -p "$(_p)" -e __input || true; do
+	#_debug "$(printf %s "${#__input} character ['${__input}'] "; LC_ALL=C; printf '%s\n' "made of ${#__input} byte(s) was read")"
+	#_debug "$(git ${_gitWT} --no-pager branch)"
+	#printf %s "${#__input} character ['${__input}'] "
+	#(export LC_ALL=C; printf '%s\n' "made of ${#__input} byte(s) was read")
 		history -s "${__input}"
 		if [[ -z "${__input}" ]]; then
 			true
+		elif [[ ${__input} =~ [[:cntrl:]] ]]; then
+			_warn "control char found"
 		elif [[ ${__input} == $'\e' ]]; then
 			_warn "no escape" && true
 		elif [[ "${__input}" =~ (^stop$|^quit$|^exit$|^q$) ]]; then
@@ -1944,6 +2023,8 @@ EOF
 			_printShellUsage
 		elif [[ "${__input}" =~ (^list$|^l$) ]]; then
 			_listTags
+		elif [[ "${__input}" =~ (^browse$|^b$) ]]; then
+			_browse "$(_getSource)"
 		elif [[ "${__input}" =~ ^git ]]; then
 			_gitCommand=(${__input})
 			git ${_gitWT} ${_gitCommand[@]:1} || :
@@ -1955,9 +2036,15 @@ EOF
 		elif [[ "${__input}" =~ (^source$|^s$) ]]; then
 			_source
 		else
-			printf %s "${#__input} character"
-			(export LC_ALL=C; printf '%s\n' "made of ${#__input} byte(s) was read")
+			# send the command (with the original command parameters) back to the
+			# calling script
+			#printf %s "${#__input} character ['${__input}'] "
+			#(export LC_ALL=C; printf '%s\n' "made of ${#__input} byte(s) was read")
 			eval "${self}" "${_originalParameters}" "${__input}" || :
+			# and if the command fails...return back to this shell prompt instead of
+			# exiting.
+			# TODO capture the $? and use it to colorize the > at the end of the
+			# _shell prompt
 		fi
 	done
 	}
@@ -1971,6 +2058,7 @@ EOF
 _irishExit() {
 	echo #to clear line...this is a bit ugly
 	# this function does not behave as desired
+	set -x
   _ask "ctrl-c detected; to resume, press R, to quit, press ENTER"
   while read -s -t 15 -n 1 _ANS; do
 		echo
@@ -2014,9 +2102,21 @@ main() {
 	# reinitialize log functions after processing all command line options
 	_fLOG
 	# validate the environment
+	# TODO figure out a better means of knowing
+	# 1. is this an interactive shell session
+	# 2. is this part of a pipe
+	# 3. are we in our custom interactive shell (and does that matter?)
+	# set up logging and stdout stderr etc with traps
+	# possibly check for tty?
+	[[ -t 1 ]] && _debug 'STDOUT is attached to TTY'
+	[[ -t 0 ]] || _debug 'STDIN is attached to pipe'
+	[[ -p /dev/stdout ]] && _debug 'STDOUT is attached to a pipe'
+	[[ ! -t 1 && ! -p /dev/stdout ]] && _debug 'STDOUT is attached to a redirection'
 	_isEnvSufficient || { _error "cannot run until these problems are resolved"; return 1; }
 	# set the global _user vars
 	_userSet
+	# set up traps now	
+	#trap _irishExit EXIT
 	# run germ shell if no arguments
 	[ -z "${_subCommand:-}" ] && _shell
 	# ctrl-d exits out of the last command...the trap set in the _shell catches
