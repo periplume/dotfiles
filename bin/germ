@@ -612,10 +612,14 @@ _status() {
 	local _lastCommit=$(git ${_git} rev-parse HEAD)
 	_inconsistentCount=$(${_gitDiff} | wc -l)
 	_info "last commit id: ${_lastCommit}"
-	_info "inconsistent count: ${_inconsistentCount}"
 	if [[ ${_inconsistentCount} -ne 0 ]]; then
-		_warn "'git diff --cached --summary HEAD' results:"
-		git ${_git} --no-pager diff --cached --summary HEAD
+		_warn "inconsistent count: ${_inconsistentCount}"
+		if [[ $_DEBUG = "true" ]]; then
+			_warn "'git diff --cached --summary HEAD' results:"
+			git ${_git} --no-pager diff --cached --summary HEAD
+		fi
+	else
+		_info "inconsistent count: ${_inconsistentCount}"
 	fi
 	_isIndexClean || _warn "INDEX IS INCONSISTENT"
 }
@@ -623,8 +627,6 @@ _status() {
 
 _sizer() {
 	cd ${_germGitDisk}
-	_debug "pwd $PWD"
-	echo "HHH $PWD ${_germGitDisk}"
 	git-sizer --verbose
 }
 
@@ -643,12 +645,9 @@ _listTags() {
 	git ${_git} ls-files t/*/count.*
 }
 
-
 ##################################
 # ADD
 ##################################
-
-# TODO add -b and -i need some thinking.
 
 _add() {
 	local _germString=
@@ -668,13 +667,9 @@ _add() {
 	# each entry:
 	# time for i in {1..1000}; do ./gen_random_germ | germ -a periplume -w studiodev add -b -i ; done
 	# so this would be very difficult
-
 	if [ ${_inline:-null} = "true" ]; then
 		if [ -p /dev/stdin ]; then
 			_debug "reading from stdin"
-			#while IFS= read line; do
-			#	_germString+="${line}"
-			#done
 			_germString=$(cat)
 		else
 			[ -z "${_workingParams}" ] && { _error "${FUNCNAME}: 'add -i' cannot contain an empty message"; return 1; }
@@ -682,30 +677,20 @@ _add() {
 			_germString="${_workingParams}"
 		fi
 	else
-		_message=$(vipe)
-		#_workingParams="${_message}"
-		_germString="${_message}"
+		_germString=$(vipe)
 	fi
+	[[ -z "${_germString}" ]] && { _error "no empty strings allowed"; return; }
 	_commitMsgString=$(_buildCommitMsg "${_germString}") || _commitMsgString="empty commit msg"
-	#_commitMsgString=$(_buildCommitMsg "${_germString}") || _error "empty commit msg"
 	# set up primary key namespace mapping
 	#_primaryKey=$(_getNewKey) || _error "could not get a new unique key"
 	# ADD the BLOB...get the BLOB id
 	_blobID=$(git ${_git} hash-object --stdin -w <<< "${_germString}")
-	#
-	# TURNING THIF OFF
-	_readBlob $_blobID 
-	#
 	# map blob to primary key in a/
-	_mapBlob ${_blobID} ${_primaryKey}
+	#_mapBlob ${_blobID} ${_primaryKey}
 	# map blob to the source namespace
 	_mapBlob ${_blobID} c/${_currentSource}/cat/${_blobID}
-	# add blob to the source list in $_currentSource
-	#_addToSource ${_currentSource} ${_primaryKey}
-	#_addToSource ${_currentSource} ${_blobID}
 	# map tags
-	# something broken here now
-	#_mapTags $_blobID
+	_mapTags $_blobID
 	# don't commit on each add during a bulk entry
 	# some other logic is needed here to confirm the bulk add is over
 	if [[ ${_bulk:-} = "true" ]]; then
@@ -715,6 +700,10 @@ _add() {
 	fi
 # TODO add timer to catch left screen
 # TODO use nano for certain functions, vim for others?
+# TODO add -b and -i need some thinking.
+# TODO answer question...do we need to commit for every add?
+# yes, because we add to "source"
+# yes, because we add to tag namespace
 }
 
 _buildCommitMsg() {
@@ -724,7 +713,7 @@ _buildCommitMsg() {
 	# truncate if necessary and append with "..."
 	# total character count <=75
 	# print string or return 1
-	# TODO: consider what to do with tags
+	# TODO: consider what to do with tags (ie strip the leading hash?)
 	local _maxLength=75
 	local _commitMsgString=
 	local _lines
@@ -767,50 +756,45 @@ _buildCommitMsg() {
 				_commitMsgString+="; ${line}"
 			fi	
 		fi
+		# once we have exceeded the maxLength...stop processing
 		if [[ ${#_commitMsgString} -ge ${_maxLength} ]]; then
 			break
 		fi
 	done < <(printf '%s\n' "${1}")
-	# truncate if necessary
+	# truncate if necessary, appending elipsis to indicate truncation
 	if [[ ${#_commitMsgString} -ge ${_maxLength} ]]; then
 		_commitMsgString="${_commitMsgString:0:${_maxLength}}..."
 	fi
+	# this should never occur...
 	[ -z "${_commitMsgString}" ] && return 1
+	# return the final string...with echo (should be using the indirect variable
+	# here
 	echo "${_commitMsgString}"
 }
 
-# problems include matching a tag '#' if ^'##' is found (as well as other
-# non-alpha-numeric characters
 _mapTags() {
 	# arg 1 = blobID
-	# check for tags (hash at first character of line)
-	# assumes global _blobArray
+	# read blob into array, read line by line, find tag and add to t/<tag>/blobID
 	[ $# -ne 1 ] && return 1
 	local _blobID=${1}
+	local _blobArray
 	local _line
-	_emptyBlob=$(git ${_git} hash-object -w --stdin </dev/null)
+	_readBlob ${_blobID} _blobArray
 	for _line in "${_blobArray[@]}"; do
 		if [ -z "${_line:-}" ]; then
+			_debug "blank line"
 			continue	# ignore blank lines
 		elif [ "${_line:0:1}" = "#" ]; then
 			_tag=${_line%% *}
-			if [ -z "${_tag:1}" ]; then
-				true
+			_debug "tag '${_tag}' detected"
+			#if [ -z "${_tag:1}" ]; then
+			if [[ "${_tag:1}" =~ ^[[:alnum:]]  ]]; then
+				# add the blob to the tag space
+				_debug "add blob '${_blobID}' to the t/${_tag:1} namespace"
+				_mapBlob ${_blobID} t/${_tag:1}/${_blobID}
 			else
-				# get the t/TAG/count.NUMBER
-				_tagCount=$(git ${_git} ls-files t/${_tag:1}/count.* | cut -f3 -d/)
-				if [ -z "${_tagCount}" ]; then
-					git ${_git} update-index --add --cacheinfo 10064,$_emptyBlob,"t/${_tag:1}/count.1"
-				else
-					git ${_git} --work-tree=${_germDir} update-index --remove "t/${_tag:1}/${_tagCount}"
-					x=${_tagCount#*.}
-					((x++))
-					_tagCount=count.$x
-					git ${_git} update-index --add --cacheinfo 10064,$_emptyBlob,"t/${_tag:1}/${_tagCount}"
-				fi
-				# update the tag-path
-				_path="t/${_tag:1}/$_blobID/self"
-				git ${_git} update-index --add --cacheinfo 10064,$_emptyBlob,$_path
+				_debug "ignore this '${_tag:1}'"
+				true
 			fi
 		fi
 	done
@@ -867,7 +851,7 @@ _create() {
 	_mapBlob "${_userUUID}" "u/${_user}/self"
 	_mapEmpty "u/${_user}/current"
 	# write blob, get blobid (hash key)
-	_blobID=$(_writeBlob "${self} created by ${_userName}:${_userEmail} (${_user}) $(date)")
+	#_blobID=$(_writeBlob "${self} created by ${_userName}:${_userEmail} (${_user}) $(date)")
 	# map blob to a/DATE/uuid.seconds
 	#_primaryKey=$(_getNewKey) || _error "could not get a new unique key"
 	#_mapBlob ${_blobID} ${_primaryKey}
@@ -1155,25 +1139,19 @@ _uuidGen() {
 #
 # generic git interface functions we use
 # _writeBlob			write a blob...return a blobID
-#	_readBlob				read a blob into a bash array and export as global var
+#	_readBlob				read a blob into a bash array and "return" as array (nameref)
 # _printBlob			print the contents of a blob to stdout
 # _mapBlob				add an entry in the index pointing to the blobID
 # _mapEmpty				write an empty blob as a key to a path (eg u/$uuid/current)
 # _doCommit				commit changes to the repo
 # _doesKeyExist		check for an existing key in namespace (eg t/$tag/catalog/x)
 # _isIndexClean		check the integrity and state of blobs and maps
-# TODO separate _writeBlob and _putBlob?
-# _writeBlob should add a key
-# _putBlob should only put a blob in and return the blobID
-# _getBlobID			given an index, return the blobID
-#
-# TODO, change all these to return exist status only, and for all data required,
-# use the passed variable name from the caller...this way we can enable all
-# legacy '_log 0' into _debug statements safely
+# _getBlobID			given a name in the index, return the blobID
 
 _getBlobID() {
 	# arg 1 = key
 	git ${_git} ls-files --stage "${1}" | cut -f2 -d' '	
+	# TODO make this a bash string slice
 }
 
 _writeBlob() {
@@ -1183,26 +1161,27 @@ _writeBlob() {
 	[ -z "${1:-}" ] && return 1
 	blobID=$(git ${_git} hash-object --stdin -w <<< "${1}")
 	echo "${blobID}"
-	# TODO improve this to avoid errors
-	# catch non-zero exit of hash-object and return that value
 }
 
 _readBlob() {
 	# arg 1 = blob ID
-	# read a blob into a bash array
-	# export the array into the global environment for further use
+	# arg 2 = variable name to use for array to "pass" value back
+	# read a blob into a bash array and put it into the variable name passed as
+	# arg 2 (bash nameref indirect variable)
 	local _blobID=$1
-	git ${_git} cat-file -e ${_blobID} &>/dev/null || return 1
-	readarray -t _blobArray < <(git ${_git} cat-file -p ${_blobID})
-	if [ ${#_blobArray[@]} -ne 0 ]; then
-		_debug "found ${#_blobArray[@]} line[s] in the new blob"
-		export _blobArray
+	# use var nameref indirection to "return" the array
+	local -n _array=$2
+	# check if the blob is there
+	git ${_git} cat-file -e ${_blobID} &>/dev/null || { _warn "noting to find at ${_blobID}"; return 1; }
+	# read the blob into a local array
+	readarray -t _array < <(git ${_git} cat-file -p ${_blobID})
+	if [ ${#_array[@]} -ne 0 ]; then
+		_debug "found ${#_array[@]} line[s] in the new blob"
+		return 0
 	else
 		_debug "${_blobID} is empty"
 		return 1
 	fi
-# TODO fix this to set the variable passed to it as an arg by the caller instead
-# of just setting a global var
 }
 
 _printBlob() {
@@ -1236,10 +1215,12 @@ _doCommit() {
 		_parent=$(git ${_git} rev-list -n1 --all HEAD)
 		_commit=$(git ${_git} commit-tree $_tree -p $_parent -m "$_commitMsg")
 	else
+		# first commit
 		_commit=$(git ${_git} commit-tree $_tree -m "[genesis] ${_commitMsg}")
 	fi
 	git ${_git} update-ref HEAD "${_commit}"
 	return 0
+	# not sure that using HEAD is the "right thing" here
 }	
 
 _doesKeyExist() {
@@ -1251,14 +1232,6 @@ _doesKeyExist() {
 
 _isIndexClean() {
 	git ${_git} diff-index --quiet --cached main 2>&1 >/dev/null || return 1
-	#git ${_git} diff-index --quiet --cached HEAD 2>&1 >/dev/null || return 1
-# TODO
-# improve this
-# 1. report on a/ for blob changes
-# 2. check for state (ie changed source)
-# TODO change this from checking the index whole to checking:
-# a/ for dropped (dangling) blobs
-# ie ignore c/ which icludes state...which we can tolerate
 }
 
 
@@ -1499,6 +1472,7 @@ _source() {
     current source: ${_displaySource} [${_sourceCount}]
 
     c) change current source
+    b) browse entities in current source
     s) show details
     l) list entities
     e) edit description
@@ -1552,6 +1526,9 @@ _source() {
 				_mapBlob "${_id}" "c/${_currentSource}/self.description"
 				_doCommit "[source] updated ${_currentSource} description"
 				_showOptions
+				;;
+			b)
+				_browse ${_currentSource}
 				;;
 			a)
 				_addSource
@@ -1702,6 +1679,8 @@ _source() {
 		_setSource "${_newName}"
 		_deleteKey "c/${_oldName}/*"
 	# this can be done more efficiently with a 'git update-index --index-info'
+	# b/c doing this on 10000 entries is very very slow
+	# but it is reliable! i was able to move 10000 in a couple minutes
 	}
 
 	_interactiveSourcePicker() {
@@ -1902,44 +1881,26 @@ _shell() {
 	# confirm exit function
 	_confirmExit() {
 		if _isIndexClean; then
-			_debug "index is clean"
+			exit
 		else
 			_debug "index is dirty"
+			_ask "save session? press ${label}y${reset} to commit changes, ${label}n${reset} to discard changes"
+			while read -r -s -n 1  __confirm; do
+				echo # needed for newline after _ask
+				case ${__confirm} in
+					y)
+						_doCommit "[${self}] $(date) closed session: ${_session}"
+						exit
+						;;
+					n)
+						exit
+						;;
+					*)
+						_mainPrompt
+						;;
+				esac
+			done
 		fi
-		_ask "save session? press ${label}y${reset} to commit changes, ${label}n${reset} to discard changes"
-		#_ask "quit germ? press ${label}y${reset} to quit"
-		while read -r -s -n 1  __confirm; do
-			echo
-			case ${__confirm} in
-				y)
-					set -x
-					_isIndexClean || _doCommit "[${self}] $(date) closed session: ${_session}"
-					#git ${_gitWT} rebase main
-					#git ${_gitWT} switch -f main
-					#_debug 'git ${_gitWT} merge ${_session}'
-					#git ${_gitWT} merge ${_session}
-					#_debug 'git ${_gitWT} branch -d ${_session}'
-					#git ${_gitWT} branch -d ${_session}
-					#_unlock
-					trap - EXIT
-					trap - SIGINT
-					cd $OLDPWD
-					exit 0
-					;;
-				n)
-					set -x
-					#_debug "git switch main"
-					#git ${_gitWT} switch -f main
-					#_debug "git branch -D ${_session}"
-					#git ${_gitWT} branch -D ${_session}
-					#_unlock
-					exit 0
-					;;
-				*)
-					_mainPrompt
-					;;
-			esac
-		done
 	}
 	# print welcome function
 	_displayWelcome() {
@@ -1974,8 +1935,6 @@ EOF
 	#
 	# ignore ctrl+\ ctrl+z and ctrl+c
 	trap '' SIGQUIT SIGTSTP SIGINT SIGTERM
-	# catch ctrl-d and run _confirmExit
-	#trap _confirmExit EXIT
 	_p() {
 		# sets the prompt
 		# colors cannot derive from tput here...as 'read -e' becomes confused
@@ -2058,7 +2017,6 @@ EOF
 _irishExit() {
 	echo #to clear line...this is a bit ugly
 	# this function does not behave as desired
-	set -x
   _ask "ctrl-c detected; to resume, press R, to quit, press ENTER"
   while read -s -t 15 -n 1 _ANS; do
 		echo
@@ -2074,21 +2032,6 @@ _irishExit() {
 	done
 }
 
-__irishExit() {
-	echo #to clear line...this is a bit ugly
-	# this function does not behave as desired
-  _ask "ctrl-c detected; to resume, press R, to quit, press ENTER"
-  read -s -t 15 -n 1 _ANS
-	echo
-  if [[ ${_ANS:-n} = 'R' ]]; then
-    return
-		_info "resuming"
-  else
-   	#_error "user requested exit with ctrl-c"
-		exit 1
-		# this seems to fuck up my terminal???
-  fi
-}
 main() {
 	# what are we trying to do (read all the positional parameters and set VARS)
 	_getOpts "${@}"
