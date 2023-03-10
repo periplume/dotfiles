@@ -27,3 +27,7 @@
 	path = /home/jason/studiodev/periplume/.gitconfig
 [includeif "gitdir:/home/jason/studio/germ"]
 	path = /home/jason/studio/germ/.gitconfig
+[includeif "gitdir:/home/jason/studiodev/epistle"]
+	path = /home/jason/studiodev/epistle/.gitconfig
+[includeif "gitdir:/home/jason/studiodev/epistle/.git"]
+	path = /home/jason/studiodev/epistle/.git/.gitconfig

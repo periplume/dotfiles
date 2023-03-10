@@ -323,8 +323,10 @@ _createGitdisk() {
 	# arg 1 = full path
 	# return 0 on success, 1 on fail
 	# notice: no name checking here
+	set -x
 	local _uuidMark
 	local _timestampUnix
+	local _bareCreate=${_bareCreate:-false}
 	_uuidMark=$(uuidgen | tr "[:upper:]" "[:lower:]")
 	_timestampUnix=$(date +%s)
 	_log 0 "_createGitdisk(): attempting to create ${1}"

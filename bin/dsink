@@ -447,7 +447,7 @@ _doWritePartition() {
 }
 
 _status() {
-	echo "STATUS:${green} OK${reset}"
+	echo "STATUS:${green} OK${reset} (this a fake result)"
 	exit 0
 }
 
@@ -473,7 +473,8 @@ _isDeviceReady() {
 	# a little hacky way of waiting on the disk before probing
 	# arg1 = disk device to check (eg /dev/sda)
 	# checks for group=disk (which seems to be necessary)
-	# NOTE: this function will hang indefinitely if the deivce never appears
+	# NOTE: this function will hang indefinitely if the device never appears
+	# it also relies on the /sys filesystem
 	_isBlockDevice $1 || return 1
 	until [ $(stat -c "%G" ${1}) = "disk" ]; do
 		sleep 0.1
