@@ -1,33 +1,15 @@
 [init]
+	# use main unstead of master
 	defaultBranch = main
 [user]
 	name = Jason Lindemuth
 	email = jason@bloom.us
 [core]
-	filemode = false
-[includeif "gitdir:~/.gitdisk"]
-	path = /home/jason/.gitdisk/.gitconfig-gitdisk
+	# not sure why i had this as false before
+	#filemode = false
+	editor = vim
 [log]
 	date = local
-[includeif "gitdir:/home/jason/studiodev"]
-	path = /home/jason/studiodev/.gitconfig-studio
-[includeif "gitdir:/home/jason/studiodev/germ/.gitdisk"]
-	path = /home/jason/studiodev/.gitconfig-studio
-[includeif "gitdir:/home/jason/studiodev/germtest/.gitdisk"]
-	path = /home/jason/studiodev/.gitconfig-studio
-[includeif "gitdir:/home/jason/studio"]
-	path = /home/jason/studio/.gitconfig-studio
-[includeif "gitdir:/home/jason/studio/germ/.gitdisk"]
-	path = /home/jason/studio/.gitconfig-studio
-[includeif "gitdir:/home/jason/studiodev/blush/.gitdisk"]
-	path = /home/jason/studiodev/.gitconfig-studio
-[includeif "gitdir:/home/jason/studiodev/blush"]
-	path = /home/jason/studiodev/blush/.gitconfig
-[includeif "gitdir:/home/jason/studiodev/periplume"]
-	path = /home/jason/studiodev/periplume/.gitconfig
-[includeif "gitdir:/home/jason/studio/germ"]
-	path = /home/jason/studio/germ/.gitconfig
-[includeif "gitdir:/home/jason/studiodev/epistle"]
-	path = /home/jason/studiodev/epistle/.gitconfig
-[includeif "gitdir:/home/jason/studiodev/epistle/.git"]
-	path = /home/jason/studiodev/epistle/.git/.gitconfig
+# use the notelos specific override config
+[includeif "gitdir:/home/jason/notelos"]
+	path = /home/jason/notelos/.git/config
