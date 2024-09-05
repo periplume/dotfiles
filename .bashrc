@@ -9,7 +9,7 @@ DOTFILES_REMOTE=https://github.com/periplume/dotfiles
 DOTFILES=enable
 
 # set up $PATH to include the dotfiles bin/ directory of scripts
-PATH=~/bin:$PATH:.
+PATH=~/bin:~/.local/bin:$PATH:.
 
 # make this bashrc usable in case dotfiles is not working or set up
 # or if we don't have access to git
@@ -50,9 +50,10 @@ HISTTIMEFORMAT="%s %F %T "
 shopt -s checkwinsize
 
 # stop gpg-agent from using the gnome popup
-#GPG_TTY=$(tty)
-#export GPG_TTY
-export PINENTRY_USER_DATA="USE_CURSES=1"
+GPG_TTY=$(tty)
+export GPG_TTY
+# this worked once:
+#export PINENTRY_USER_DATA="USE_CURSES=1"
 
 
 # set up color variable shortcuts
@@ -266,3 +267,9 @@ __prompt_command() {
     fi
 }
 
+
+[ -f ~/.fzf.bash ] && source ~/.fzf.bash
+. "$HOME/.cargo/env"
+export PATH=$PATH:/home/jason/notelos/.bin
+export PATH=$PATH:/home/jason/notelos/.bin
+export PATH=$PATH:/tmp/notelos/.bin
