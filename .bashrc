@@ -1,7 +1,5 @@
 # .bashrc
 # github.com/periplume/dotfiles.git
-#set -x
-#set -euo pipefail
 
 # define the remote repository (or multiple for redundancy)
 # TODO make this into an array
@@ -49,12 +47,10 @@ HISTTIMEFORMAT="%s %F %T "
 # update the values of LINES and COLUMNS.
 shopt -s checkwinsize
 
-# stop gpg-agent from using the gnome popup
+# set up gpg to use tty
 GPG_TTY=$(tty)
 export GPG_TTY
-# this worked once:
-#export PINENTRY_USER_DATA="USE_CURSES=1"
-
+# note that the ~/.gnupg/gpg-agent.conf file determines the pinentry
 
 # set up color variable shortcuts
 # TODO fix this up with better names
@@ -93,7 +89,6 @@ export LESS=-R
 
 # disable ctrl-s 
 stty -ixon
-
 
 # separate the dotfiles into a sourced file
 # call it giot as in git-io, a disk
@@ -267,9 +262,11 @@ __prompt_command() {
     fi
 }
 
-
+# source the fzf-bash script to add the locally installed fzf into the path
 [ -f ~/.fzf.bash ] && source ~/.fzf.bash
+
+# cargo environment script (notelos depends on some cargo stuff)
 . "$HOME/.cargo/env"
+
+# notelos adds this to the path...all notelos executables within ~/notelos
 export PATH=$PATH:/home/jason/notelos/.bin
-export PATH=$PATH:/home/jason/notelos/.bin
-export PATH=$PATH:/tmp/notelos/.bin
